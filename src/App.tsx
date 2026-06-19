@@ -5,10 +5,11 @@ import ScriptInput from './components/ScriptInput';
 import Timeline from './components/Timeline';
 import VideoCanvas from './components/VideoCanvas';
 import RenderModal from './components/RenderModal';
+import ThumbnailModal from './components/ThumbnailModal';
 import AccessGate from './components/AccessGate';
 import { 
   Sparkles, Download, Video, Palette, Library, Info, HelpCircle,
-  Terminal, Send, X, Bot, Sliders, Eye, EyeOff, MessageSquare, Volume2, Zap, SlidersHorizontal, Command
+  Terminal, Send, X, Bot, Sliders, Eye, EyeOff, MessageSquare, Volume2, Zap, SlidersHorizontal, Command, Image as ImageIcon
 } from 'lucide-react';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
     return localStorage.getItem('pexels_api_key') || '';
   });
   const [isRenderOpen, setIsRenderOpen] = useState<boolean>(false);
+  const [isThumbnailOpen, setIsThumbnailOpen] = useState<boolean>(false);
   
   // Shared Playback state for real-time play elements
   const [playbackIndex, setPlaybackIndex] = useState<number>(0);
@@ -32,7 +34,7 @@ export default function App() {
     aspectRatio: '16:9',
     musicTrack: DEFAULT_MUSIC[1].url, // Meditative pad default
     musicVolume: 0.12,
-    voiceLanguage: 'en-gb',
+    voiceLanguage: 'am-yotor-epic-male',
     subtitleStyle: {
       fontSize: 32,
       color: '#FFFFFF',
@@ -40,7 +42,9 @@ export default function App() {
       position: 'bottom',
       fontFamily: 'Space Grotesk',
       uppercase: true
-    }
+    },
+    transitionType: 'crossfade',
+    transitionDuration: 0.5
   });
 
   // --- YOTOR OWNER EXCLUSIVE AI STUDIO COPILOT PORTAL ---
@@ -70,189 +74,90 @@ export default function App() {
     return () => clearInterval(intv);
   }, []);
 
-  const handleRunCopilotCommand = (cmdText: string) => {
+  const handleRunCopilotCommand = async (cmdText: string) => {
     if (!cmdText.trim()) return;
+
     const cleanCmd = cmdText.trim();
-    
-    // Add user message
-    const userMsgId = `usr_${Date.now()}`;
-    const updatedLogs = [
-      ...copilotLogs,
-      { id: userMsgId, type: 'user' as const, text: cleanCmd }
-    ];
-    setCopilotLogs(updatedLogs);
+    const userLogId = `usr_${Date.now()}`;
+    const loadingLogId = `load_${Date.now()}`;
+
+    // Log owner command immediately and add a loading entry
+    setCopilotLogs(prev => [
+      ...prev,
+      { id: userLogId, type: 'user' as const, text: cleanCmd },
+      { id: loadingLogId, type: 'assistant' as const, text: '🔄 ጥያቄዎን እያስተናገድኩ ነው... (Processing)' }
+    ]);
     setCopilotInput('');
 
-    // Process and respond
-    setTimeout(() => {
-      const inputLower = cleanCmd.toLowerCase().trim();
-      let responseText = '';
-      
-      try {
-        // Core Parsing Rules
-        if (inputLower.includes('ማጥፋት') || inputLower.includes('ሰርዝ') && inputLower.includes('ሁሉንም') || inputLower.includes('clear all') || inputLower.includes('empty')) {
-          setScenes([]);
-          responseText = '🗑️ ሁሉንም ትዕይንቶች በስኬት አጥፍቻለሁ። አሁን አዲስ ስክሪፕት መያዝ ይችላሉ።';
-        }
-        else if (inputLower.includes('ቆጣቢ') || inputLower.includes('saver') || inputLower.includes('ዳታ')) {
-          responseText = '⚡ [ዳታ ቆጣቢ ሞድ] በጥሩ ሁኔታ ተረድቻለሁ! እባክዎ ይህንን ቪዲዮ Render ሲያደርጉት በ "ትንሽ ዳታ / Ultra-Saver" መቆጣጠሪያውን ተጭነው ይላኩት። ጥራቱን ሳይቀንስ በትንሽ ሜባ በፍጥነት ለደንበኛው ይደርሳል።';
-        }
-        else if (inputLower.includes('ፕሮሞሽን') || inputLower.includes('promotion') || inputLower.includes('promo') || inputLower.includes('ማስታወቂያ') || inputLower.includes('አስተዋውቅ')) {
-          responseText = `📢 **ለይቶር ባለቤት የተዘጋጀ ልዩ የፕሮሞሽን ፅሁፍ (Yotor VIP Promotion Generator)** 👑
+    try {
+      const response = await fetch('/api/copilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: cleanCmd,
+          projectConfig,
+          scenes
+        })
+      });
 
-ባለቤት ሆይ፥ መተግበሪያውን (ይቶር ቪዲዮ ስቱዲዮን) ለደንበኞች ለማስተዋወቅና ብዙ ተከፋይ ተጠቃሚዎችን ለማፍራት የሚረዱ ማራኪ የማስታወቂያ ጽሑፎችን አዘጋጅቼልዎታለሁ። ገልብጠው መጠቀም ይችላሉ፡
-
-========================================
-🚀 **አማራጭ 1፦ ለቴሌግራም ቻናልና ግሩፕ (Telegram Channel High-Converting Copy)**
-========================================
-"ያለ ምንም ድካም በ AI ቪዲዮዎችን መስራት እና መሸጥ ይፈልጋሉ? 🤩
-
-በኢትዮጵያ የመጀመሪያው የሆነው **#የይቶር (Yotor) AI ቪዲዮ ስቱዲዮ** ስራ ጀምሯል! 🎉
-
-🔥 **ይቶር (Yotor) ምን ይሰራል?**
-• ✍️ ማንኛውንም ጽሑፍ (ስክሪፕት) ወዲያውኑ ወደ አስገራሚ የአማርኛ ድምፅ (Voiceover) ይቀይራል
-• 🎬 ጽሑፉን መሰረት ያደረጉ ማራኪ ቪዲዮዎችን ያውጣጣል
-• 📱 በሴኮንዶች ውስጥ ለቲክቶክ (9:16)፣ ለዩቲዩብ (16:9) ወይም ለፌስቡክ ቪዲዮዎችን ያመርታል
-• ⚡ **የዳታ ቆጣቢ ቴክኖሎጂ (Ultra-Saver)** ስላለው በትንሽ ሜጋባይት በፍጥነት ይወርዳል!
-
-💰 **የአገልግሎት እቅዶች (Plans)፡**
-1️⃣ **የ 720p HD እቅድ** ፡ በቴሌብር ወርሃዊ ክፍያ 10,000 ብር ብቻ!
-2️⃣ **የ 1080p Full HD እቅድ** ፡ በቴሌብር ወርሃዊ ክፍያ 15,000 ብር ብቻ!
-
-👉 **አሁኑኑ ይግቡና ከታች ያለውን የቴሌብር ክፍያ በመጫን ፍቃድዎን በሰከንዶች ውስጥ ያግብሩ!**
-🔗 ${window.location.origin} 👈"
-
-========================================
-🎬 **አማራጭ 2፦ ለቲክቶክ እና ለሪልስ የሚሆን የቪዲዮ ስክሪፕት (TikTok / Reels Viral Script)**
-========================================
-* [ቪዲዮ እይታ]፡ በስልኩ ማራኪ ቪዲዮዎችን ሰርቶ በቴሌግራም ገንዘብ እየሰራ ያለ ዘመናዊ ኢትዮጵያዊ ወጣት።
-* [ድምፅ]፡ "በስልክዎ ብቻ ጽሁፎችን ጽፈው ማራኪ ቪዲዮዎችን መስራት እንደሚችሉ ያውቃሉ? ያውም በአሪፍ የአማርኛ ድምፅ! በይቶር (Yotor) AI ስቱዲዮ አሁን ይቻላል። ቪዲዮዎችን በትንሽ ዳታ በፍጥነት ሰርተው ለደንበኞችዎ ያድርሱ። ሊንኩን በመጫን አሁኑኑ በነፃ ይሞክሩት!"
-
-========================================
-💡 **ለባለቤቱ የሚመከሩ የግብይት ስልቶች (Yotor Marketing Tips for Ethiopia):**
-• 1. በየቀኑ አጫጭር ቪዲዮዎችን በዚህ ስቱዲዮ እየሰሩ ቲክቶክ ላይ ይፖስቱ። ቲክቶክ ቶሎ ሰዎችን ያዳርሳል።
-• 2. መግባት የሚፈልጉ ደንበኞች በቴሌብር ሲከፍሉዎት፥ እርስዎ በ **'Yotor AI Guard Assistant'** chat-bot አማካኝነት በቀጥታ ፍቃድ እንዲያገኙ ይፍቀዱላቸው (Approve ያድርጉ)።
-
-ፈጣሪ ስራዎትን ይባርክ! ✨`;
-        }
-        else if (inputLower.includes('ጨምር') || inputLower.includes('add') || inputLower.includes('ትዕይንት')) {
-          const topicKeywords = cleanCmd.match(/(?:ስለ|about)\s+([^፣።]+)/)?.[1] || 'cosmic deep exploration space drone';
-          const fallbackCatalogIdx = scenes.length;
-          const fallbackVid = DEFAULT_CATALOG[fallbackCatalogIdx % DEFAULT_CATALOG.length];
-          
-          const newScene: Scene = {
-            id: `sc_cop_new_${Date.now()}`,
-            text: `ትዕይንት ${scenes.length + 1}: ${topicKeywords}`,
-            keywords: topicKeywords,
-            caption: `${topicKeywords.toUpperCase()}`,
-            duration: 6.0,
-            videoUrl: fallbackVid.url,
-            videoThumb: fallbackVid.thumbnail,
-            videoAuthor: fallbackVid.author,
-            videoAuthorUrl: '#',
-            voiceoverUrl: `/api/tts?text=${encodeURIComponent(topicKeywords)}&lang=${projectConfig.voiceLanguage}`,
-            originalIndex: scenes.length
-          };
-
-          setScenes(prev => [...prev, newScene]);
-          setPlaybackIndex(scenes.length);
-          responseText = `✅ አዲስ ትዕይንት ስለ "${topicKeywords}" በስኬት ተጨምሯል!`;
-        }
-        else if (inputLower.includes('መጠን') || inputLower.includes('size') || inputLower.includes('font')) {
-          const numbers = inputLower.match(/\d+/);
-          if (numbers) {
-            const size = parseInt(numbers[0], 10);
-            if (size >= 12 && size <= 85) {
-              setProjectConfig(prev => ({
-                ...prev,
-                subtitleStyle: {
-                  ...prev.subtitleStyle,
-                  fontSize: size
-                }
-              }));
-              responseText = `📐 የግርጌ ጽሑፍ (Subtitle Size) በትክክል ወደ **${size}px** ተቀይሯል!`;
-            } else {
-              responseText = `⚠️ የተሳሳተ መጠን ነው። እባክዎን ከ 12 እስከ 80 ባለው የልኬት ገደብ ይምረጡ።`;
-            }
-          } else {
-            responseText = `❓ የግርጌ ጽሑፍ የፊደል መጠን ስንት ይሁን? ለምሳሌ "የግርጌ ጽሁፍ መጠን 40 አድርግ" ብለው ይጠይቁኝ።`;
-          }
-        }
-        else if (inputLower.includes('ቀለም') || inputLower.includes('color') || inputLower.includes('ቢጫ') || inputLower.includes('ቀይ') || inputLower.includes('አረንጓዴ') || inputLower.includes('ነጭ') || inputLower.includes('ሰማያዊ')) {
-          let name = 'ነጭ (White)';
-          let code = '#FFFFFF';
-
-          if (inputLower.includes('ቢጫ') || inputLower.includes('yellow')) {
-            name = 'ቢጫ (Yellow)';
-            code = '#FACC15';
-          } else if (inputLower.includes('ቀይ') || inputLower.includes('red')) {
-            name = 'ቀይ (Red)';
-            code = '#EF4444';
-          } else if (inputLower.includes('አረንጓዴ') || inputLower.includes('green')) {
-            name = 'አረንጓዴ (Green)';
-            code = '#10B981';
-          } else if (inputLower.includes('ሰማያዊ') || inputLower.includes('blue') || inputLower.includes('cyan')) {
-            name = 'ሰማያዊ (Cyan)';
-            code = '#06B6D4';
-          }
-
-          setProjectConfig(prev => ({
-            ...prev,
-            subtitleStyle: {
-              ...prev.subtitleStyle,
-              color: code
-            }
-          }));
-          responseText = `🎨 የግርጌ ጽሑፍ ቀለም ወደ **${name}** ተቀይሯል!`;
-        }
-        else if (inputLower.includes('ድምፅ') || inputLower.includes('volume') || inputLower.includes('ሙዚቃ')) {
-          const numbers = inputLower.match(/\d+/);
-          if (numbers) {
-            const value = parseInt(numbers[0], 10);
-            const factor = value > 1 ? value / 100 : value;
-            setProjectConfig(prev => ({
-              ...prev,
-              musicVolume: Number(factor.toFixed(2))
-            }));
-            responseText = `🎵 የጀርባ ሙዚቃ የድምፅ መጠን ወደ **${Math.round(factor * 100)}%** በስኬት ተስተካክሏል!`;
-          } else {
-            responseText = `❓ የሙዚቃ ድምፅ መጠን ስንት እንዲሆን ይፈልጋሉ? ለምሳሌ "ሙዚቃ ድምፅ 15%" ይበሉኝ።`;
-          }
-        }
-        else if (inputLower.includes('ርዝማኔ') || inputLower.includes('duration') || inputLower.includes('ሰከንድ')) {
-          const numbers = inputLower.match(/\d+/);
-          if (numbers) {
-            const secs = parseFloat(numbers[0]);
-            if (secs >= 2 && secs <= 40) {
-              setScenes(prev => prev.map(s => ({ ...s, duration: secs })));
-              responseText = `⏱️ የሁሉም ትዕይንቶች ርዝማኔ በአንድ ጊዜ ወደ **${secs} ሰከንድ** በተሳካ ሁኔታ ተለውጧል!`;
-            } else {
-              responseText = `⚠️ እባክዎ ከ 2 ሰከንድ እስከ 40 ሰከንዶች ባለው ግልጽ ገደብ ውስጥ ይሞክሩ።`;
-            }
-          } else {
-            responseText = `❓ ትዕይንቱ ስንት ሰከንድ እንዲቆይ ይፈልጋሉ? ለምሳሌ "የሁሉንም ርዝማኔ 6 ሰከንድ አድርግ" ይበሉኝ።`;
-          }
-        }
-        else if (inputLower.includes('አቀማመጥ') || inputLower.includes('ratio') || inputLower.includes('9:16') || inputLower.includes('16:9') || inputLower.includes('1:1')) {
-          let selectedRatio: AspectRatio = '16:9';
-          if (inputLower.includes('9:16')) selectedRatio = '9:16';
-          else if (inputLower.includes('1:1')) selectedRatio = '1:1';
-
-          setProjectConfig(prev => ({ ...prev, aspectRatio: selectedRatio }));
-          responseText = `📐 የቪዲዮ አቀማመጥ ወደ **${selectedRatio}** (TikTok/YouTube) በቅርጽ ተቀይሯል!`;
-        }
-        else {
-          responseText = `💡 ባለቤት ሆይ፥ ትዕዛዙን በጥራት ተረድቻለሁ ግን ለማስተናገድ ትክክለኛውን ግቤት አላገኘሁም። እባክዎን በቀጥታ "ቀለም ቢጫ አድርግ"፣ "ርዝማኔ 6 ሰከንድ" ወይም "የግርጌ ጽሑፍ መጠን ወደ 40 ቀይር" በማለት በቀኝ ቅጽ ያዘዙኝ። ወዲያውኑ አስተካክላለሁ! ✨`;
-        }
-      } catch (e: any) {
-        responseText = `❌ ትዕዛዝዎን ለማስፈጸም ስሞክር ስህተት ገጥሞኛል: ${e.message}`;
+      if (!response.ok) {
+        throw new Error(await response.text());
       }
 
-      setCopilotLogs(prev => [
-        ...prev,
-        { id: `asst_${Date.now()}`, type: 'assistant' as const, text: responseText }
-      ]);
-    }, 450);
+      const data = await response.json();
+
+      if (data.updateConfig && data.projectConfig) {
+        // Apply project config changes
+        setProjectConfig(prev => ({
+          ...prev,
+          ...data.projectConfig,
+          subtitleStyle: {
+            ...prev.subtitleStyle,
+            ...(data.projectConfig.subtitleStyle || {})
+          }
+        }));
+      }
+
+      if (data.updateScenes && data.scenes && Array.isArray(data.scenes)) {
+        // Merge the AI returned scenes to preserve properties (like URLs) if they were omitted
+        const processedScenes = data.scenes.map((s: any, i: number) => {
+          const existing = scenes.find((os) => os.id === s.id);
+          if (existing) {
+            return { ...existing, ...s };
+          }
+          // New scene generated by AI
+          const fallbackVid = DEFAULT_CATALOG[i % DEFAULT_CATALOG.length];
+          return {
+            id: s.id || `sc_cop_new_${Date.now()}_${i}`,
+            text: s.text || `ትዕይንት ${i + 1}`,
+            keywords: s.keywords || 'cinematic',
+            caption: s.caption || s.text || `ትዕይንት ${i + 1}`,
+            duration: s.duration || 6.0,
+            videoUrl: s.videoUrl || fallbackVid.url,
+            videoThumb: s.videoThumb || fallbackVid.thumbnail,
+            videoAuthor: s.videoAuthor || fallbackVid.author,
+            videoAuthorUrl: s.videoAuthorUrl || '#',
+            voiceoverUrl: s.voiceoverUrl || `/api/tts?text=${encodeURIComponent(s.text || 'text')}&lang=${projectConfig.voiceLanguage}`,
+            originalIndex: i
+          };
+        });
+        setScenes(processedScenes);
+      }
+
+      // Update logs: remove loading log, add response
+      setCopilotLogs(prev => prev.filter(log => log.id !== loadingLogId).concat({
+        id: `asst_${Date.now()}`,
+        type: 'assistant' as const,
+        text: data.responseText || "✅ አጠናቅቄያለሁ!"
+      }));
+
+    } catch (e: any) {
+      setCopilotLogs(prev => prev.filter(log => log.id !== loadingLogId).concat({
+        id: `asst_err_${Date.now()}`,
+        type: 'assistant' as const,
+        text: `❌ ስህተት ተፈጥሯል: ${e.message}`
+      }));
+    }
   };
 
   // Load spectacular cosmic startup template
@@ -502,13 +407,21 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setIsThumbnailOpen(true)}
+              disabled={scenes.length === 0}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 bg-indigo-600/20 hover:bg-indigo-600 border border-indigo-500/50 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg disabled:opacity-30 disabled:pointer-events-none active:scale-98"
+            >
+              <ImageIcon size={14} className="stroke-[2.5px]" />
+              🪄 ታምኔል ፍጠር
+            </button>
+            <button
               onClick={() => setIsRenderOpen(true)}
               disabled={scenes.length === 0}
-              className="flex items-center justify-center gap-2 px-6 py-3.5 bg-zinc-100 hover:bg-white text-black font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg disabled:opacity-30 disabled:pointer-events-none active:scale-98"
+              className="flex items-center justify-center gap-2 px-6 py-3.5 bg-zinc-100 hover:bg-white text-black font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg disabled:opacity-30 disabled:pointer-events-none active:scale-98 animate-[pulse_3s_infinite]"
               id="bake-video-btn"
             >
               <Download size={14} className="stroke-[2.5px]" />
-              Bake & Export Video
+              🎬 ቪዲዮውን አዘጋጅና አውርድ (Bake & Export Video)
             </button>
           </div>
         </header>
@@ -555,6 +468,14 @@ export default function App() {
           </div>
 
         </main>
+        
+        {/* Floating AI Thumbnail Generator Panel */}
+        <ThumbnailModal
+          isOpen={isThumbnailOpen}
+          onClose={() => setIsThumbnailOpen(false)}
+          scenes={scenes}
+          aspectRatio={projectConfig.aspectRatio}
+        />
 
         {/* Floating rendering wizard panel */}
         <RenderModal

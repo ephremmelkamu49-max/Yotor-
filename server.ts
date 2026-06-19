@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,6 +11,34 @@ const PORT = 3000;
 
 // JSON parser
 app.use(express.json({ limit: '10mb' }));
+
+function pcmToWav(pcmBuffer: Buffer, sampleRate: number): Buffer {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataSize = pcmBuffer.length;
+
+  const wavHeader = Buffer.alloc(44);
+  // RIFF chunk
+  wavHeader.write('RIFF', 0);
+  wavHeader.writeUInt32LE(36 + dataSize, 4);
+  wavHeader.write('WAVE', 8);
+  // fmt sub-chunk
+  wavHeader.write('fmt ', 12);
+  wavHeader.writeUInt32LE(16, 16);
+  wavHeader.writeUInt16LE(1, 20);
+  wavHeader.writeUInt16LE(numChannels, 22);
+  wavHeader.writeUInt32LE(sampleRate, 24);
+  wavHeader.writeUInt32LE(byteRate, 28);
+  wavHeader.writeUInt16LE(blockAlign, 32);
+  wavHeader.writeUInt16LE(bitsPerSample, 34);
+  // data sub-chunk
+  wavHeader.write('data', 36);
+  wavHeader.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([wavHeader, pcmBuffer]);
+}
 
 // Setup Gemini Client according to instructions
 let ai: GoogleGenAI | null = null;
@@ -39,7 +67,7 @@ app.post("/api/analyze-script", async (req, res) => {
     // If API key is missing, fall back to an smart adaptive splitter so the app handles 30 minutes smoothly!
     console.warn("GEMINI_API_KEY is not defined. Falling back to mechanical split.");
     const sentences = script
-      .split(/(?<=[.!?])\s+/)
+      .split(/(?<=[.!?።፧])\s+/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
     
@@ -152,7 +180,13 @@ ${script}
       }
     });
 
-    const parsedResult = JSON.parse(response.text.trim());
+    let responseText = response.text.trim();
+    if (responseText.startsWith('```json')) {
+      responseText = responseText.replace(/^```json\n/, '').replace(/\n```$/, '');
+    } else if (responseText.startsWith('```')) {
+      responseText = responseText.replace(/^```\n/, '').replace(/\n```$/, '');
+    }
+    const parsedResult = JSON.parse(responseText.trim());
     
     // Add IDs and original index
     const processedScenes = parsedResult.scenes.map((scene: any, index: number) => ({
@@ -166,7 +200,7 @@ ${script}
     console.error("Gemini script parser failed:", error);
     // Return standard fallback chunking on exception
     const sentences = script
-      .split(/(?<=[.!?])\s+/)
+      .split(/(?<=[.!?።፧])\s+/)
       .map(s => s.trim())
       .filter(s => s.length > 0);
     
@@ -222,18 +256,58 @@ app.get("/api/tts", async (req, res) => {
   }
 
   try {
-    // Translate TTS limits around ~200 characters per request.
-    // If it's slightly over, we split or just crop, but since Gemini splits sentence-by-sentence,
-    // they fit neatly. We will chop it at 200 character safety lines just in case.
     const safeText = text.substring(0, 195);
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(safeText)}&tl=${lang}&client=tw-ob`;
+    
+    let fallbackToGoogle = false;
+    let fallbackLang = lang;
 
-    const ttsRes = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Referer": "https://translate.google.com/"
+    if (lang.startsWith('am-yotor') && ai) {
+      let voiceName = "Charon"; // default
+      if (lang === 'am-yotor-epic-male') voiceName = "Charon";
+      else if (lang === 'am-yotor-warm-female') voiceName = "Aoede";
+      else if (lang === 'am-yotor-bright-female') voiceName = "Kore";
+      else if (lang === 'am-yotor-rugged-male') voiceName = "Fenrir";
+
+      try {
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-flash-tts-preview",
+          contents: [{ parts: [{ text: safeText }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voiceName },
+              },
+            },
+          },
+        });
+
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          const pcmBuffer = Buffer.from(base64Audio, 'base64');
+          const wavBuffer = pcmToWav(pcmBuffer, 24000);
+          
+          res.setHeader("Content-Type", "audio/wav");
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          return res.send(wavBuffer);
+        } else {
+           fallbackToGoogle = true;
+           fallbackLang = 'am';
+        }
+      } catch (geminiError: any) {
+        console.warn("Gemini TTS failed (likely quota exceeded), falling back:", geminiError.message);
+        fallbackToGoogle = true;
+        fallbackLang = 'am';
       }
-    });
+    } else if (lang.startsWith('am-yotor')) {
+      // If am-yotor is requested but no API key is available
+      fallbackLang = 'am';
+    }
+
+    // Google Translate TTS fallback
+    const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${fallbackLang}&q=${encodeURIComponent(safeText)}`;
+
+    const ttsRes = await fetch(url);
 
     if (!ttsRes.ok) {
       throw new Error(`Google TTS proxy offline or rejected request style. Status: ${ttsRes.status}`);
@@ -295,7 +369,62 @@ app.get("/api/pexels/search", async (req, res) => {
 });
 
 
-// 4. Vite Dev Server & Static Production Routing
+// 4. Thumbnail Generation API - uses Gemini to generate a YouTube-style thumbnail
+app.post("/api/thumbnail", async (req, res) => {
+  try {
+    if (!ai) {
+      throw new Error("AI features require GEMINI_API_KEY environment variable to be set.");
+    }
+    const { aspectRatio, scenesText } = req.body;
+    
+    // 1. Generate visual image prompt using text model
+    const promptResponse = await ai.models.generateContent({
+      model: "gemini-3.1-flash-preview",
+      contents: `You are an expert YouTube Thumbnail designer. Generate a highly detailed image generation prompt for an amazing, eye-catching, highly clickable video thumbnail based on this video script snippet. The thumbnail should be cinematic, vibrant, and highly dramatic. IMPORTANT: Do NOT include text or typography instructions in the image prompt, just describe the raw visual composition and lighting.
+
+Video Script:
+${scenesText.substring(0, 1000)}`
+    });
+
+    let imagePrompt = promptResponse.text?.trim() || "cinematic colorful abstract background 4k";
+
+    // 2. Generate Image using gemini-3.1-flash-image
+    const imageResponse = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-image',
+      contents: {
+        parts: [{ text: imagePrompt }],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: aspectRatio === '9:16' ? '9:16' : (aspectRatio === '1:1' ? '1:1' : '16:9'),
+          imageSize: "1K"
+        }
+      }
+    });
+
+    let imageUrl = null;
+    if (imageResponse.candidates && imageResponse.candidates[0].content.parts) {
+      for (const part of imageResponse.candidates[0].content.parts) {
+        if (part.inlineData) {
+          const base64EncodeString: string = part.inlineData.data;
+          imageUrl = `data:image/jpeg;base64,${base64EncodeString}`;
+          break;
+        }
+      }
+    }
+
+    if (!imageUrl) {
+      throw new Error("No image was returned from the model.");
+    }
+
+    res.json({ imageUrl, prompt: imagePrompt });
+  } catch(e: any) {
+    console.error("Thumbnail generation failed:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 5. Vite Dev Server & Static Production Routing
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -313,7 +442,71 @@ async function startServer() {
     console.log("Serving statically from compiled static assets inside /dist.");
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // 3. AI Copilot endpoint - handles user commands and modifies project config and scenes
+app.post("/api/copilot", async (req, res) => {
+  try {
+    if (!ai) {
+      throw new Error("AI features require GEMINI_API_KEY environment variable to be set.");
+    }
+    const { command, projectConfig, scenes } = req.body;
+
+    // Use a robust prompt to process any action
+    const prompt = `You are "Yotor AI Copilot", an AI assistant in a video generation studio. 
+The user is speaking in Amharic (or English) and wants to command the studio: "${command}"
+
+Current Project Config:
+${JSON.stringify(projectConfig, null, 2)}
+
+Current Scenes:
+${JSON.stringify(scenes, null, 2)}
+
+Instructions:
+1. Figure out what the user wants to change. (E.g. change font size, change color, update duration of all scenes, alter aspect ratio, add a new scene, set transition/Zoom Blur/Crossfade effects, or just a general chat/promo request).
+2. If changing config (e.g., subtitleStyle, aspectRatio, musicVolume, transitionType, transitionDuration), set "updateConfig" to true and return the WHOLE modified projectConfig object.
+3. If changing scenes (e.g., duration, caption, text, adding/removing scenes), set "updateScenes" to true and return the WHOLE modified scenes array. 
+4. Remember: KEEP all existing properties in scenes (like videoUrl, voiceoverUrl, id, videoThumb) exactly as they are unless instructed to change them!
+5. Provide a helpful response in Amharic in "responseText". Let the user know what was done.
+
+Return ONLY JSON matching the schema.`;
+
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        responseText: { type: Type.STRING, description: "Helpful response in Amharic explaining what you did." },
+        updateConfig: { type: Type.BOOLEAN },
+        projectConfig: { type: Type.OBJECT, description: "The modified project configuration, only if updateConfig is true" },
+        updateScenes: { type: Type.BOOLEAN },
+        scenes: { type: Type.ARRAY, description: "The modified scenes array, only if updateScenes is true", items: { type: Type.OBJECT } }
+      },
+      required: ["responseText", "updateConfig", "updateScenes"]
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: schema,
+        temperature: 0.1
+      }
+    });
+
+    let responseTextRaw = response.text.trim();
+    if (responseTextRaw.startsWith('```json')) {
+      responseTextRaw = responseTextRaw.replace(/^```json\n/, '').replace(/\n```$/, '');
+    } else if (responseTextRaw.startsWith('```')) {
+      responseTextRaw = responseTextRaw.replace(/^```\n/, '').replace(/\n```$/, '');
+    }
+    
+    const result = JSON.parse(responseTextRaw);
+    res.json(result);
+  } catch (error: any) {
+    console.error("Copilot operation failed:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server started. Listening at http://localhost:${PORT}`);
   });
 }

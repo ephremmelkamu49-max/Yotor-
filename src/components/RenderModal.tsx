@@ -159,13 +159,28 @@ export default function RenderModal({
       const audioCtx = new AudioContextClass();
       audioCtxRef.current = audioCtx;
       
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+      
       // Node destination matching MediaRecorder
       const audioDest = audioCtx.createMediaStreamDestination();
       audioDestNodeRef.current = audioDest;
 
-      // 1. Capture stream from HTML Canvas
+      // 1. Capture stream from HTML Canvas with multiple browser compatibility fallbacks
       addLog("Capturing high-fidelity 30fps canvas compositing stream...");
-      const canvasStream = canvasElement.captureStream(30);
+      let canvasStream: MediaStream;
+      if (typeof (canvasElement as any).captureStream === 'function') {
+        try {
+          canvasStream = (canvasElement as any).captureStream(30);
+        } catch (e) {
+          canvasStream = (canvasElement as any).captureStream();
+        }
+      } else if (typeof (canvasElement as any).mozCaptureStream === 'function') {
+        canvasStream = (canvasElement as any).mozCaptureStream(30);
+      } else {
+        throw new Error("Your browser does not support canvas stream recording. Please use modern Chrome, Firefox, or Edge.");
+      }
       
       // 2. Load background music loop if selected
       if (projectConfig.musicTrack) {
@@ -266,7 +281,7 @@ export default function RenderModal({
         // Delay slightly to let the video source mount and load, then play it!
         // This ensures the recorded WebM composition stream features dynamic flowing video motion!
         setTimeout(() => {
-          const videoEl = canvasElement?.parentElement?.querySelector('video') as HTMLVideoElement;
+          const videoEl = (canvasElement?.parentElement?.parentElement?.querySelector('video') || document.querySelector('video')) as HTMLVideoElement;
           if (videoEl) {
             videoEl.muted = true;
             videoEl.play().catch(() => {});

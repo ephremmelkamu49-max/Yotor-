@@ -39,7 +39,7 @@ export default function ScriptInput({ onAnalyze, isLoading, loadingStage = "Anal
     return localStorage.getItem('pexels_api_key') || '';
   });
   const [showKey, setShowKey] = useState(false);
-  const [voiceLang, setVoiceLang] = useState('en-gb');
+  const [voiceLang, setVoiceLang] = useState('am-yotor-epic-male');
   const [showSettings, setShowSettings] = useState(false);
 
   // Approximate reading speed helper (estimating ~140 words per minute, i.e., 2.3 words/second)

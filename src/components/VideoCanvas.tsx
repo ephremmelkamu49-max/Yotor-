@@ -30,16 +30,19 @@ export default function VideoCanvas({
   setIsPlaying,
   canvasRef
 }: VideoCanvasProps) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
+  const audioSrcRefs = useRef<{ [key: string]: string }>({});
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const progressTimerRef = useRef<any>(null);
 
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string>('');
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(''); // Keep this unused state to prevent breaking previously unseen logic if any or just remove it. Actually I will remove it and add refs.
   const [currentSceneTime, setCurrentSceneTime] = useState<number>(0);
+  const currentSceneTimeRef = useRef<number>(0);
+  const playbackIndexRef = useRef<number>(0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [showConfigTabs, setShowConfigTabs] = useState<'ratio' | 'subtitle' | 'music'>('ratio');
+  const [showConfigTabs, setShowConfigTabs] = useState<'ratio' | 'subtitle' | 'music' | 'motion' | 'voice'>('ratio');
   const [loadedTtsPercentage, setLoadedTtsPercentage] = useState<number>(0);
 
   // Active scene accessor
@@ -82,11 +85,6 @@ export default function VideoCanvas({
   useEffect(() => {
     if (!currentScene) return;
 
-    // Load scene video
-    if (currentScene.videoUrl) {
-      setActiveVideoUrl(currentScene.videoUrl);
-    }
-
     // Stop current custom audio, load active scene TTS chunk
     stopAllTtsAudios();
     setCurrentSceneTime(0);
@@ -94,13 +92,13 @@ export default function VideoCanvas({
     if (isPlaying) {
       playActiveSceneTtsAndVideo();
     }
-  }, [playbackIndex, currentScene?.videoUrl, currentScene?.id]);
+  }, [playbackIndex, currentScene?.id]);
 
   // Handle overall Play/Pause toggles
   useEffect(() => {
-    const video = videoRef.current;
     if (isPlaying) {
       // Start Video
+      const video = currentScene ? videoRefs.current[currentScene.id] : null;
       if (video) {
         video.play().catch(() => {});
       }
@@ -108,9 +106,9 @@ export default function VideoCanvas({
       startTimelineTimer();
     } else {
       // Pause Video
-      if (video) {
-        video.pause();
-      }
+      (Object.values(videoRefs.current) as (HTMLVideoElement | null)[]).forEach(vid => {
+        if (vid) vid.pause();
+      });
       if (musicAudioRef.current) {
         musicAudioRef.current.pause();
       }
@@ -133,19 +131,35 @@ export default function VideoCanvas({
   const playActiveSceneTtsAndVideo = () => {
     if (!currentScene) return;
 
-    // Trigger video play
-    const video = videoRef.current;
-    if (video) {
-      video.play().catch(() => {});
-    }
+    // Pause all other videos, play current
+    (Object.entries(videoRefs.current) as [string, HTMLVideoElement | null][]).forEach(([id, vid]) => {
+      if (!vid) return;
+      if (id === currentScene.id) {
+        vid.play().catch(() => {});
+      } else {
+        // Keep previous video playing slightly for transition
+        const prevScene = playbackIndex > 0 ? scenes[playbackIndex - 1] : null;
+        if (prevScene && id === prevScene.id) {
+           setTimeout(() => { if (vid) vid.pause() }, 1000);
+        } else {
+           vid.pause();
+        }
+      }
+    });
 
     // Dynamic Speaking proxy chunk loader
     const ttsUrl = `/api/tts?text=${encodeURIComponent(currentScene.text)}&lang=${projectConfig.voiceLanguage}`;
     
     let audio = audioRefs.current[currentScene.id];
-    if (!audio) {
+    let cachedSrc = audioSrcRefs.current[currentScene.id];
+
+    if (!audio || cachedSrc !== ttsUrl) {
+      if (audio) {
+        audio.pause();
+      }
       audio = new Audio(ttsUrl);
       audioRefs.current[currentScene.id] = audio;
+      audioSrcRefs.current[currentScene.id] = ttsUrl;
     }
 
     audio.volume = isMuted ? 0 : 1.0;
@@ -183,23 +197,29 @@ export default function VideoCanvas({
         // Also safeguard with TTS audio real length if it is loaded & ready
         const currentAudio = currentScene ? audioRefs.current[currentScene.id] : null;
         if (currentAudio?.duration && !isNaN(currentAudio.duration)) {
-          // If the audio represents a longer speak chunk than estimated block length,
-          // dynamically stretch the video segment so audio never gets cut off!
-          targetDuration = Math.max(targetDuration, currentAudio.duration);
+          // Sync segment duration exactly to audio length (video equals voiceover)
+          targetDuration = currentAudio.duration + 0.15; // Only a brief pad for perfect flow
         }
 
         if (nextTime >= targetDuration) {
           // Go to next scene or loop
           if (playbackIndex < scenes.length - 1) {
-            setPlaybackIndex(p => p + 1);
+            setPlaybackIndex(p => {
+              playbackIndexRef.current = p + 1;
+              return p + 1;
+            });
+            currentSceneTimeRef.current = 0;
             return 0;
           } else {
             // Reached absolute script end
             setIsPlaying(false);
             setPlaybackIndex(0);
+            playbackIndexRef.current = 0;
+            currentSceneTimeRef.current = 0;
             return 0;
           }
         }
+        currentSceneTimeRef.current = nextTime;
         return nextTime;
       });
     }, intervalTime);
@@ -240,11 +260,11 @@ export default function VideoCanvas({
       ctx.fillStyle = '#090d16';
       ctx.fillRect(0, 0, width, height);
 
-      // 1. Draw Stock Video Frame (if loaded)
-      const video = videoRef.current;
-      if (video && video.readyState >= 2) {
-        const vWidth = video.videoWidth;
-        const vHeight = video.videoHeight;
+      const drawVideoFrame = (vid: HTMLVideoElement, alpha: number, scale: number = 1.0) => {
+        if (!vid || vid.readyState < 2) return;
+        ctx.globalAlpha = alpha;
+        const vWidth = vid.videoWidth;
+        const vHeight = vid.videoHeight;
         const vRatio = vWidth / vHeight;
         const cRatio = width / height;
 
@@ -260,7 +280,50 @@ export default function VideoCanvas({
           sy = (vHeight - sHeight) / 2;
         }
 
-        ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, width, height);
+        ctx.save();
+        ctx.translate(width/2, height/2);
+        ctx.scale(scale, scale);
+        // apply blur for zoomBlur if scaling is intense
+        if (scale > 1.05 || scale < 0.95) {
+          ctx.filter = `blur(${Math.abs(1 - scale) * 20}px)`;
+        }
+        
+        ctx.drawImage(vid, sx, sy, sWidth, sHeight, -width/2, -height/2, width, height);
+        ctx.restore();
+        
+        ctx.globalAlpha = 1.0;
+      };
+
+      // 1. Draw Stock Video Frame with Cinematic Transitions
+      const currentVideo = currentScene ? videoRefs.current[currentScene.id] : null;
+      
+      const tSource = projectConfig.transitionType || 'crossfade';
+      const transitionDuration = projectConfig.transitionDuration || 0.5;
+      const cTime = currentSceneTimeRef.current;
+      const pIndex = playbackIndexRef.current;
+
+      const isTransitioning = pIndex > 0 && cTime < transitionDuration && tSource !== 'none';
+
+      if (isTransitioning) {
+        const prevScene = scenes[pIndex - 1];
+        const prevVideo = prevScene ? videoRefs.current[prevScene.id] : null;
+        const progress = cTime / transitionDuration; // 0 to 1
+
+        if (tSource === 'crossfade') {
+          if (prevVideo) drawVideoFrame(prevVideo, 1.0); // Base frame
+          if (currentVideo) drawVideoFrame(currentVideo, progress); // Fade in new frame
+        } else if (tSource === 'zoomBlur') {
+          // Prev video zooms IN and fades out
+          if (prevVideo) {
+            drawVideoFrame(prevVideo, 1.0 - progress, 1.0 + (progress * 0.4));
+          }
+          // Current video zooms IN from scaled down and fades in
+          if (currentVideo) {
+            drawVideoFrame(currentVideo, progress, 0.8 + (progress * 0.2));
+          }
+        }
+      } else {
+        if (currentVideo) drawVideoFrame(currentVideo, 1.0, 1.0);
       }
 
       // 2. Cinematic shadow vignette backdrop filter
@@ -367,24 +430,34 @@ export default function VideoCanvas({
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [projectConfig, currentScene, activeVideoUrl]);
+  }, [projectConfig, currentScene]);
 
   const handleNext = () => {
     if (playbackIndex < scenes.length - 1) {
-      setPlaybackIndex(p => p + 1);
+      setPlaybackIndex(p => {
+        playbackIndexRef.current = p + 1;
+        return p + 1;
+      });
     } else {
       setPlaybackIndex(0);
+      playbackIndexRef.current = 0;
     }
     setCurrentSceneTime(0);
+    currentSceneTimeRef.current = 0;
   };
 
   const handlePrev = () => {
     if (playbackIndex > 0) {
-      setPlaybackIndex(p => p - 1);
+      setPlaybackIndex(p => {
+        playbackIndexRef.current = p - 1;
+        return p - 1;
+      });
     } else {
       setPlaybackIndex(scenes.length - 1);
+      playbackIndexRef.current = scenes.length - 1;
     }
     setCurrentSceneTime(0);
+    currentSceneTimeRef.current = 0;
   };
 
   // Pre-fetch all TTS files to monitor completion
@@ -396,6 +469,7 @@ export default function VideoCanvas({
         const ttsUrl = `/api/tts?text=${encodeURIComponent(scene.text)}&lang=${projectConfig.voiceLanguage}`;
         const audio = new Audio(ttsUrl);
         audioRefs.current[scene.id] = audio;
+        audioSrcRefs.current[scene.id] = ttsUrl;
         
         await new Promise((resolve) => {
           audio.addEventListener('canplaythrough', () => {
@@ -458,6 +532,18 @@ export default function VideoCanvas({
               className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${showConfigTabs === 'music' ? 'bg-indigo-650 text-white font-bold' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               Soundtrack
+            </button>
+            <button
+              onClick={() => setShowConfigTabs('voice')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${showConfigTabs === 'voice' ? 'bg-indigo-650 text-white font-bold' : 'text-zinc-500 hover:text-zinc-300'}`}
+            >
+              Voice
+            </button>
+            <button
+              onClick={() => setShowConfigTabs('motion')}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${showConfigTabs === 'motion' ? 'bg-indigo-650 text-white font-bold' : 'text-zinc-500 hover:text-zinc-300'}`}
+            >
+              Motion
             </button>
           </div>
         </div>
@@ -584,6 +670,75 @@ export default function VideoCanvas({
               </div>
             </div>
           )}
+
+          {showConfigTabs === 'voice' && (
+            <div className="w-full grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+              {GOOGLE_TTS_LANGUAGES.map((langOpts) => (
+                <div key={langOpts.code} className="flex items-center gap-2 pr-2">
+                  <button
+                    onClick={() => onUpdateConfig({ voiceLanguage: langOpts.code })}
+                    className={`flex-1 p-2 border rounded-xl text-left transition-all flex flex-col justify-center ${
+                      projectConfig.voiceLanguage === langOpts.code
+                        ? 'bg-indigo-500/5 border-indigo-500 text-indigo-400 font-bold'
+                        : 'border-[#0c0c0e] hover:border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    <span className="text-[11px] font-semibold block leading-tight">{langOpts.name.split(' - ')[0]}</span>
+                    <span className="text-[9px] text-zinc-650 block mt-0.5">{langOpts.name.split(' - ')[1] || 'Standard'}</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const ttsUrl = `/api/tts?text=${encodeURIComponent("ሰላም፣ ይህ የድምፅ ናሙና ነው። የዮቶር አርቴፊሻል ኢንተለጀንስ ነው።")}&lang=${langOpts.code}`;
+                      new Audio(ttsUrl).play();
+                    }}
+                    title="Play Preview"
+                    className="p-2 rounded-full bg-zinc-900 border border-zinc-800 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
+                  >
+                    <Volume2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showConfigTabs === 'motion' && (
+            <div className="w-full space-y-3">
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => onUpdateConfig({ transitionType: 'none' })}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'none' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                >
+                  Hard Cut
+                </button>
+                <button
+                  onClick={() => onUpdateConfig({ transitionType: 'crossfade' })}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'crossfade' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                >
+                  Smooth Crossfade
+                </button>
+                <button
+                  onClick={() => onUpdateConfig({ transitionType: 'zoomBlur' })}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'zoomBlur' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                >
+                  Zoom Blur
+                </button>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-zinc-500 font-mono text-[10px]">Duration (s)</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="2.0"
+                  step="0.1"
+                  value={projectConfig.transitionDuration}
+                  onChange={(e) => onUpdateConfig({ transitionDuration: parseFloat(e.target.value) })}
+                  className="w-48 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+                <span className="text-[10px] font-mono text-indigo-400">{projectConfig.transitionDuration}s</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -601,17 +756,20 @@ export default function VideoCanvas({
           />
         </div>
 
-        {/* Hidden active audio proxy, handled completely by react triggers */}
-        {activeVideoUrl && (
+        {/* Hidden active videos for crossfade rendering */}
+        {scenes.map(s => (
           <video
-            ref={videoRef}
-            src={activeVideoUrl}
+            key={s.id}
+            ref={el => { videoRefs.current[s.id] = el; }}
+            src={s.videoUrl}
             loop
             muted
             playsInline
-            className="hidden"
+            crossOrigin="anonymous"
+            className="absolute pointer-events-none opacity-0 w-1 h-1"
+            preload="auto"
           />
-        )}
+        ))}
       </div>
 
       {/* Mechanical Playback Control Deck */}
@@ -658,7 +816,12 @@ export default function VideoCanvas({
               <SkipBack size={18} />
             </button>
             <button
-              onClick={() => setIsPlaying(!isPlaying)}
+              onClick={() => {
+                if (!isPlaying) {
+                  playActiveSceneTtsAndVideo();
+                }
+                setIsPlaying(!isPlaying);
+              }}
               type="button"
               className="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transform transition-all active:scale-95 shadow-md shadow-indigo-505/20"
               id="compositor-play-btn"

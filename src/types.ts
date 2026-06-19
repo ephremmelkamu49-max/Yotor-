@@ -29,6 +29,8 @@ export interface ProjectConfig {
   musicVolume: number;    // 0 to 1
   voiceLanguage: string;  // gTTS accent / localization
   subtitleStyle: SubtitleStyle;
+  transitionType: 'none' | 'crossfade' | 'zoomBlur';
+  transitionDuration: number;
 }
 
 export interface VideoClip {
