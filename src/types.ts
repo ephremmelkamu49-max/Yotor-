@@ -1,0 +1,56 @@
+export interface Scene {
+  id: string;
+  text: string;           // Spoken text
+  keywords: string;       // Pexels video search query
+  duration: number;       // Calculated speaking duration in seconds
+  caption: string;        // Subtitle text to overlay
+  videoUrl: string | null;// High-quality .mp4 url from Pexels/built-in Library
+  videoThumb: string | null;
+  videoAuthor: string | null;
+  videoAuthorUrl: string | null;
+  voiceoverUrl: string | null; // Google Translate TTS url
+  originalIndex: number;  // Keep track of chronological order
+}
+
+export type AspectRatio = '16:9' | '9:16' | '1:1';
+
+export interface SubtitleStyle {
+  fontSize: number;       // in pixels relative to viewport
+  color: string;          // hex/rgba
+  backgroundColor: string;// background box color (e.g. rgba(0,0,0,0.5))
+  position: 'bottom' | 'middle' | 'top';
+  fontFamily: 'Inter' | 'Space Grotesk' | 'JetBrains Mono' | 'Playfair Display';
+  uppercase: boolean;
+}
+
+export interface ProjectConfig {
+  aspectRatio: AspectRatio;
+  musicTrack: string;     // URL or key of selected background music
+  musicVolume: number;    // 0 to 1
+  voiceLanguage: string;  // gTTS accent / localization
+  subtitleStyle: SubtitleStyle;
+}
+
+export interface VideoClip {
+  id: number;
+  width: number;
+  height: number;
+  url: string;
+  video_files: {
+    id: number;
+    quality: 'hd' | 'sd' | 'uhd';
+    file_type: string;
+    width: number;
+    height: number;
+    link: string;
+  }[];
+  video_pictures: {
+    id: number;
+    picture: string;
+  }[];
+  user: {
+    id: number;
+    name: string;
+    url: string;
+  };
+}
