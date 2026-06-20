@@ -102,7 +102,7 @@ export default function ThumbnailModal({ isOpen, onClose, scenes, aspectRatio }:
                     className="max-w-full max-h-[500px] object-contain transition-transform duration-700 ease-out group-hover:scale-105"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-6">
-                     <p className="text-xs font-mono text-zinc-300 uppercase tracking-widest drop-shadow-md">Generated with Gemini 3.1 Flash</p>
+                     <p className="text-xs font-mono text-zinc-300 uppercase tracking-widest drop-shadow-md">Generated with Gemini AI</p>
                   </div>
                </div>
             </div>
@@ -120,7 +120,7 @@ export default function ThumbnailModal({ isOpen, onClose, scenes, aspectRatio }:
 
           {errorText && (
              <div className="mt-6 p-4 bg-red-950/30 border border-red-900/50 rounded-xl text-red-400 text-xs font-mono w-full max-w-xl text-center">
-                ስህተት አጋጥሟል! {errorText}
+                ስህተት አጋጥሟል! (AI model mismatch or key limit). እባክዎ እንደገና ይሞክሩ።
              </div>
           )}
         </div>
@@ -128,8 +128,8 @@ export default function ThumbnailModal({ isOpen, onClose, scenes, aspectRatio }:
         {/* Footer Actions */}
         <div className="p-5 border-t border-zinc-900 bg-zinc-950 flex items-center justify-between">
            <div className="text-[10px] text-zinc-600 font-mono tracking-wider flex flex-col gap-1">
-             <span>* Gemini 3.1 Flash Image Engine</span>
-             <span>* 1K Resolution High-Quality Output</span>
+             <span>* Gemini 3.5 Flash Engine</span>
+             <span>* High-Resolution 1K Output</span>
            </div>
            
            <div className="flex gap-4">

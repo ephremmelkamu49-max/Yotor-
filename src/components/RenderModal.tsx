@@ -11,7 +11,7 @@ interface RenderModalProps {
   scenes: Scene[];
   projectConfig: ProjectConfig;
   canvasElement: HTMLCanvasElement | null;
-  onRenderFrameChange?: (index: number) => void;
+  onRenderFrameChange?: (index: number, time?: number) => void;
 }
 
 export default function RenderModal({
@@ -246,7 +246,7 @@ export default function RenderModal({
 
         // Signal parent to update the active timeline scene and captions
         if (onRenderFrameChange) {
-          onRenderFrameChange(index);
+          onRenderFrameChange(index, 0);
         }
 
         // Delay slightly to let the video source mount and load, then play it!
@@ -283,9 +283,16 @@ export default function RenderModal({
               const stepTimer = setInterval(() => {
                 remainingTime -= (clockTick / 1000);
                 
+                const elapsed = scene.duration - remainingTime;
+                
                 // Track progress linearly
-                const completedSeconds = scenesToRender.slice(0, index).reduce((s, sc) => s + sc.duration, 0) + (scene.duration - remainingTime);
+                const completedSeconds = scenesToRender.slice(0, index).reduce((s, sc) => s + sc.duration, 0) + elapsed;
                 setProgress(Math.min(99, Math.round((completedSeconds / totalSecondsToRender) * 100)));
+
+                // Propagate high-fidelity elapsed time for smooth animations
+                if (onRenderFrameChange) {
+                  onRenderFrameChange(index, elapsed);
+                }
 
                 if (remainingTime <= 0) {
                   clearInterval(stepTimer);

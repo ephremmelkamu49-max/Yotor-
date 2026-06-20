@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GOOGLE_TTS_LANGUAGES } from '../data';
-import { Eye, EyeOff, Sparkles, AlertCircle, FileText, Settings, Key, HelpCircle } from 'lucide-react';
+import { Eye, EyeOff, Sparkles, AlertCircle, FileText, Settings, Key, HelpCircle, Activity } from 'lucide-react';
 
 interface ScriptInputProps {
   onAnalyze: (script: string, pexelsKey: string, voiceLang: string) => Promise<void>;
@@ -41,6 +41,29 @@ export default function ScriptInput({ onAnalyze, isLoading, loadingStage = "Anal
   const [showKey, setShowKey] = useState(false);
   const [voiceLang, setVoiceLang] = useState('am-yotor-epic-male');
   const [showSettings, setShowSettings] = useState(false);
+  const [diagResult, setDiagResult] = useState<any>(null);
+  const [loadingDiagnostic, setLoadingDiagnostic] = useState(false);
+
+  const runDiagnostics = async () => {
+    setLoadingDiagnostic(true);
+    try {
+      const res = await fetch("/api/diagnose");
+      if (res.ok) {
+        const data = await res.json();
+        setDiagResult(data);
+      }
+    } catch (e) {
+      console.error("Diagnostic run failed:", e);
+    } finally {
+      setLoadingDiagnostic(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (showSettings) {
+      runDiagnostics();
+    }
+  }, [showSettings]);
 
   // Approximate reading speed helper (estimating ~140 words per minute, i.e., 2.3 words/second)
   const wordCount = script.trim() ? script.trim().split(/\s+/).length : 0;
@@ -123,6 +146,71 @@ export default function ScriptInput({ onAnalyze, isLoading, loadingStage = "Anal
                   pexels.com/api
                 </a>
               </p>
+            </div>
+
+            {/* System Diagnostic Center */}
+            <div className="pt-3.5 border-t border-zinc-900 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">
+                  <Activity size={13} className="text-indigo-400" />
+                  System Diagnostics / የሲስተም ራስ-ፈተሻ
+                </span>
+                <button
+                  type="button"
+                  onClick={runDiagnostics}
+                  disabled={loadingDiagnostic}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-1"
+                >
+                  {loadingDiagnostic ? "Checking..." : "[🔄 ዳግም ፈትሽ]"}
+                </button>
+              </div>
+
+              {diagResult ? (
+                <div className="space-y-1.5 text-xs font-sans">
+                  {/* Gemini Key Status */}
+                  <div className="flex items-start justify-between bg-[#080808]/50 p-2 rounded border border-zinc-900/60">
+                    <div>
+                      <div className="font-semibold text-zinc-300 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${diagResult.geminiApiKeyConfigured ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`} />
+                        Gemini AI Core (ይዘት መፍጠሪያ)
+                      </div>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">
+                        {diagResult.geminiApiKeyConfigured ? "የቪዲዮ ይዘት መከፋፈያና Copilot ሞተር ዝግጁ ነው" : "ይዘት ለመፍጠር የGemini ቁልፍ ማዋቀር ያስፈልጋል"}
+                      </p>
+                    </div>
+                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${diagResult.geminiApiKeyConfigured ? 'text-emerald-400 bg-emerald-500/5' : 'text-rose-450 bg-rose-500/5'}`}>
+                      {diagResult.geminiApiKeyConfigured ? "ONLINE" : "MISSING"}
+                    </span>
+                  </div>
+
+                  {/* Gemini TTS Capability */}
+                  <div className="flex items-start justify-between bg-[#080808]/50 p-2 rounded border border-zinc-900/60">
+                    <div className="flex-1 pr-2">
+                      <div className="font-semibold text-zinc-300 flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          diagResult.geminiTtsStatus === 'ok' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : (diagResult.geminiTtsStatus === 'quota_limit' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500')
+                        }`} />
+                        Premium Amharic Narrator (የተራኪ ድምፅ)
+                      </div>
+                      <p className="text-[10.5px] text-zinc-450 mt-1 leading-relaxed">
+                        {diagResult.geminiTtsMessage}
+                      </p>
+                    </div>
+                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                      diagResult.geminiTtsStatus === 'ok' 
+                        ? 'text-emerald-400 bg-emerald-500/5' 
+                        : (diagResult.geminiTtsStatus === 'quota_limit' ? 'text-amber-400 bg-amber-500/5' : 'text-rose-400 bg-rose-500/5')
+                    }`}>
+                      {diagResult.geminiTtsStatus.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[10px] text-zinc-500 italic font-mono p-2 flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                  ዳይናሚክ ሲስተም ምርመራ... (Testing modules)
+                </div>
+              )}
             </div>
           </div>
         )}

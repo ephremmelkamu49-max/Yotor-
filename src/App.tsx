@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Scene, ProjectConfig, AspectRatio } from './types';
 import { DEFAULT_CATALOG, DEFAULT_MUSIC } from './data';
 import ScriptInput from './components/ScriptInput';
@@ -24,6 +24,7 @@ export default function App() {
   
   // Shared Playback state for real-time play elements
   const [playbackIndex, setPlaybackIndex] = useState<number>(0);
+  const [renderTime, setRenderTime] = useState<number | undefined>(undefined);
   const activeSceneId = scenes[playbackIndex]?.id || null;
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   
@@ -45,7 +46,8 @@ export default function App() {
       uppercase: true
     },
     transitionType: 'crossfade',
-    transitionDuration: 0.5
+    transitionDuration: 0.5,
+    isVoiceEnabled: true
   });
 
   // --- YOTOR OWNER EXCLUSIVE AI STUDIO COPILOT PORTAL ---
@@ -367,16 +369,16 @@ export default function App() {
     setPlaybackIndex(nextIndex);
   };
 
-  const handleSelectScene = (sceneId: string) => {
+  const handleSelectScene = useCallback((sceneId: string) => {
     const idx = scenes.findIndex(s => s.id === sceneId);
     if (idx !== -1) {
       setPlaybackIndex(idx);
     }
-  };
+  }, [scenes]);
 
-  const handleUpdateConfig = (updated: Partial<ProjectConfig>) => {
+  const handleUpdateConfig = useCallback((updated: Partial<ProjectConfig>) => {
     setProjectConfig(prev => ({ ...prev, ...updated }));
-  };
+  }, [setProjectConfig]);
 
   return (
     <AccessGate>
@@ -407,6 +409,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            <a
+              href={window.location.href}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 text-[10px] uppercase tracking-widest font-bold rounded-xl transition-all"
+            >
+              🌐 Full Web View
+            </a>
             <button
               onClick={() => setIsThumbnailOpen(true)}
               disabled={scenes.length === 0}
@@ -468,6 +478,7 @@ export default function App() {
                 isPlaying={isPlaying}
                 setIsPlaying={setIsPlaying}
                 canvasRef={canvasRef}
+                renderTime={renderTime}
               />
             </div>
           </div>
@@ -485,12 +496,16 @@ export default function App() {
         {/* Floating rendering wizard panel */}
         <RenderModal
           isOpen={isRenderOpen}
-          onClose={() => setIsRenderOpen(false)}
+          onClose={() => {
+            setIsRenderOpen(false);
+            setRenderTime(undefined);
+          }}
           scenes={scenes}
           projectConfig={projectConfig}
           canvasElement={canvasRef.current}
-          onRenderFrameChange={(idx) => {
+          onRenderFrameChange={(idx, time) => {
             setPlaybackIndex(idx);
+            setRenderTime(time);
           }}
         />
 

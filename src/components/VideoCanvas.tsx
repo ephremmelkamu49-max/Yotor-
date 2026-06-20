@@ -16,6 +16,7 @@ interface VideoCanvasProps {
   isPlaying: boolean;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  renderTime?: number;
 }
 
 export default function VideoCanvas({
@@ -28,7 +29,8 @@ export default function VideoCanvas({
   setPlaybackIndex,
   isPlaying,
   setIsPlaying,
-  canvasRef
+  canvasRef,
+  renderTime
 }: VideoCanvasProps) {
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
@@ -80,18 +82,20 @@ export default function VideoCanvas({
     }
   }, [projectConfig.musicVolume, isMuted]);
 
-  // Handle active scene change trigger (Source loader)
+  // Handle active scene changes (audio & timer)
   useEffect(() => {
     if (!currentScene) return;
 
-    // Stop current custom audio, load active scene TTS chunk
     stopAllTtsAudios();
     setCurrentSceneTime(0);
+    currentSceneTimeRef.current = 0;
+    
+    playbackIndexRef.current = playbackIndex;
 
     if (isPlaying) {
       playActiveSceneTtsAndVideo();
     }
-  }, [playbackIndex, currentScene?.id]);
+  }, [playbackIndex, currentScene?.id, isPlaying]);
 
   // Handle overall Play/Pause toggles
   useEffect(() => {
@@ -118,7 +122,7 @@ export default function VideoCanvas({
     return () => {
       clearTimelineTimer();
     };
-  }, [isPlaying]);
+  }, [isPlaying, currentScene?.id, projectConfig.isVoiceEnabled, projectConfig.voiceLanguage]);
 
   const stopAllTtsAudios = () => {
     (Object.values(audioRefs.current) as HTMLAudioElement[]).forEach(aud => {
@@ -161,13 +165,17 @@ export default function VideoCanvas({
       audioSrcRefs.current[currentScene.id] = ttsUrl;
     }
 
-    audio.volume = isMuted ? 0 : 1.0;
+    audio.volume = (isMuted || !projectConfig.isVoiceEnabled) ? 0 : 1.0;
     
     // Play with fallback/guard
-    audio.play()
-      .catch((err) => {
-        console.warn("TTS Audio play waiting for user action limit API:", err);
-      });
+    if (projectConfig.isVoiceEnabled) {
+      audio.play()
+        .catch((err) => {
+          console.warn("TTS Audio play waiting for user action limit API:", err);
+        });
+    } else {
+      audio.pause();
+    }
 
     // Handle music play if active
     if (musicAudioRef.current && projectConfig.musicTrack) {
@@ -182,39 +190,35 @@ export default function VideoCanvas({
     
     const intervalTime = 100; // Tick every 100ms
     progressTimerRef.current = setInterval(() => {
-      setCurrentSceneTime(prev => {
-        const nextTime = prev + (intervalTime / 1000);
-        
-        let targetDuration = currentScene?.duration || 4;
-        
-        // Also safeguard with TTS audio real length if it is loaded & ready
-        const currentAudio = currentScene ? audioRefs.current[currentScene.id] : null;
-        if (currentAudio?.duration && !isNaN(currentAudio.duration)) {
-          // Sync segment duration exactly to audio length (video equals voiceover)
-          targetDuration = currentAudio.duration + 0.15; // Only a brief pad for perfect flow
-        }
+      const currentVal = currentSceneTimeRef.current;
+      const nextTime = currentVal + (intervalTime / 1000);
+      
+      let targetDuration = currentScene?.duration || 4;
+      const currentAudio = currentScene ? audioRefs.current[currentScene.id] : null;
+      if (currentAudio?.duration && !isNaN(currentAudio.duration)) {
+        targetDuration = currentAudio.duration + 0.15;
+      }
 
-        if (nextTime >= targetDuration) {
-          // Go to next scene or loop
-          if (playbackIndex < scenes.length - 1) {
-            setPlaybackIndex(p => {
-              playbackIndexRef.current = p + 1;
-              return p + 1;
-            });
-            currentSceneTimeRef.current = 0;
-            return 0;
-          } else {
-            // Reached absolute script end
-            setIsPlaying(false);
-            setPlaybackIndex(0);
-            playbackIndexRef.current = 0;
-            currentSceneTimeRef.current = 0;
-            return 0;
-          }
+      if (nextTime >= targetDuration) {
+        // Go to next scene or loop
+        if (playbackIndexRef.current < scenes.length - 1) {
+          const nextIndex = playbackIndexRef.current + 1;
+          playbackIndexRef.current = nextIndex;
+          setPlaybackIndex(nextIndex);
+          currentSceneTimeRef.current = 0;
+          setCurrentSceneTime(0);
+        } else {
+          // Reached absolute script end
+          setIsPlaying(false);
+          playbackIndexRef.current = 0;
+          setPlaybackIndex(0);
+          currentSceneTimeRef.current = 0;
+          setCurrentSceneTime(0);
         }
+      } else {
         currentSceneTimeRef.current = nextTime;
-        return nextTime;
-      });
+        setCurrentSceneTime(nextTime);
+      }
     }, intervalTime);
   };
 
@@ -253,8 +257,23 @@ export default function VideoCanvas({
       ctx.fillStyle = '#090d16';
       ctx.fillRect(0, 0, width, height);
 
-      const drawVideoFrame = (vid: HTMLVideoElement, alpha: number, scale: number = 1.0) => {
+      const drawVideoFrame = (
+        vid: HTMLVideoElement, 
+        alpha: number, 
+        scale: number = 1.0, 
+        offsetX: number = 0, 
+        offsetY: number = 0,
+        clipRect?: { x: number; y: number; width: number; height: number }
+      ) => {
         if (!vid || vid.readyState < 2) return;
+        
+        ctx.save();
+        if (clipRect) {
+          ctx.beginPath();
+          ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
+          ctx.clip();
+        }
+
         ctx.globalAlpha = alpha;
         const vWidth = vid.videoWidth;
         const vHeight = vid.videoHeight;
@@ -273,15 +292,14 @@ export default function VideoCanvas({
           sy = (vHeight - sHeight) / 2;
         }
 
-        ctx.save();
         ctx.translate(width/2, height/2);
         ctx.scale(scale, scale);
-        // apply blur for zoomBlur if scaling is intense
+        // apply blur if scaling is intense
         if (scale > 1.05 || scale < 0.95) {
           ctx.filter = `blur(${Math.abs(1 - scale) * 20}px)`;
         }
         
-        ctx.drawImage(vid, sx, sy, sWidth, sHeight, -width/2, -height/2, width, height);
+        ctx.drawImage(vid, sx, sy, sWidth, sHeight, -width/2 + offsetX, -height/2 + offsetY, width, height);
         ctx.restore();
         
         ctx.globalAlpha = 1.0;
@@ -292,7 +310,7 @@ export default function VideoCanvas({
       
       const tSource = projectConfig.transitionType || 'crossfade';
       const transitionDuration = projectConfig.transitionDuration || 0.5;
-      const cTime = currentSceneTimeRef.current;
+      const cTime = renderTime !== undefined ? renderTime : currentSceneTimeRef.current;
       const pIndex = playbackIndexRef.current;
 
       const isTransitioning = pIndex > 0 && cTime < transitionDuration && tSource !== 'none';
@@ -305,15 +323,27 @@ export default function VideoCanvas({
         if (tSource === 'crossfade') {
           if (prevVideo) drawVideoFrame(prevVideo, 1.0); // Base frame
           if (currentVideo) drawVideoFrame(currentVideo, progress); // Fade in new frame
-        } else if (tSource === 'zoomBlur') {
-          // Prev video zooms IN and fades out
+        } else if (tSource === 'slide') {
+          // Previous video slides LEFT out of bounds
           if (prevVideo) {
-            drawVideoFrame(prevVideo, 1.0 - progress, 1.0 + (progress * 0.4));
+            drawVideoFrame(prevVideo, 1.0, 1.0, -progress * width, 0);
           }
-          // Current video zooms IN from scaled down and fades in
+          // Current video slides LEFT in bounds
           if (currentVideo) {
-            drawVideoFrame(currentVideo, progress, 0.8 + (progress * 0.2));
+            drawVideoFrame(currentVideo, 1.0, 1.0, (1.0 - progress) * width, 0);
           }
+        } else if (tSource === 'wipe') {
+          // Base/Background layer is the previous video
+          if (prevVideo) {
+            drawVideoFrame(prevVideo, 1.0, 1.0);
+          }
+          // Current video is wiped in (clipped left to right)
+          if (currentVideo) {
+            drawVideoFrame(currentVideo, 1.0, 1.0, 0, 0, { x: 0, y: 0, width: progress * width, height: height });
+          }
+        } else {
+          // Playback fallback
+          if (currentVideo) drawVideoFrame(currentVideo, 1.0);
         }
       } else {
         if (currentVideo) drawVideoFrame(currentVideo, 1.0, 1.0);
@@ -423,7 +453,7 @@ export default function VideoCanvas({
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [projectConfig, currentScene]);
+  }, [projectConfig, currentScene, renderTime]);
 
   const handleNext = () => {
     if (playbackIndex < scenes.length - 1) {
@@ -683,56 +713,81 @@ export default function VideoCanvas({
           )}
 
           {showConfigTabs === 'voice' && (
-            <div className="w-full grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-              {GOOGLE_TTS_LANGUAGES.map((langOpts) => (
-                <div key={langOpts.code} className="flex items-center gap-2 pr-2">
-                  <button
-                    onClick={() => onUpdateConfig({ voiceLanguage: langOpts.code })}
-                    className={`flex-1 p-2 border rounded-xl text-left transition-all flex flex-col justify-center ${
-                      projectConfig.voiceLanguage === langOpts.code
-                        ? 'bg-indigo-500/5 border-indigo-500 text-indigo-400 font-bold'
-                        : 'border-[#0c0c0e] hover:border-zinc-800 text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    <span className="text-[11px] font-semibold block leading-tight">{langOpts.name.split(' - ')[0]}</span>
-                    <span className="text-[9px] text-zinc-650 block mt-0.5">{langOpts.name.split(' - ')[1] || 'Standard'}</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const ttsUrl = `/api/tts?text=${encodeURIComponent("ሰላም፣ ይህ የድምፅ ናሙና ነው። የዮቶር አርቴፊሻል ኢንተለጀንስ ነው።")}&lang=${langOpts.code}`;
-                      new Audio(ttsUrl).play();
-                    }}
-                    title="Play Preview"
-                    className="p-2 rounded-full bg-zinc-900 border border-zinc-800 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
-                  >
-                    <Volume2 size={12} />
-                  </button>
-                </div>
-              ))}
+            <div className="w-full space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-900 mb-2">
+                <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest">Voiceover Control</span>
+                <button
+                  onClick={() => onUpdateConfig({ isVoiceEnabled: !projectConfig.isVoiceEnabled })}
+                  className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                    projectConfig.isVoiceEnabled 
+                      ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400' 
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                  }`}
+                >
+                  {projectConfig.isVoiceEnabled ? 'VOICE ON' : 'VOICE OFF'}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                {GOOGLE_TTS_LANGUAGES.map((langOpts) => (
+                    <div key={langOpts.code} className="flex items-center gap-2 pr-2">
+                    <button
+                        onClick={() => onUpdateConfig({ voiceLanguage: langOpts.code })}
+                        className={`flex-1 p-2 border rounded-xl text-left transition-all flex flex-col justify-center ${
+                          projectConfig.voiceLanguage === langOpts.code
+                            ? 'bg-indigo-500/5 border-indigo-500 text-indigo-400 font-bold'
+                            : 'border-[#0c0c0e] hover:border-zinc-800 text-zinc-500 hover:text-zinc-300'
+                        }`}
+                      >
+                        <span className="text-[11px] font-semibold block leading-tight">{langOpts.name.split(' - ')[0]}</span>
+                        <span className="text-[9px] text-zinc-650 block mt-0.5">{langOpts.name.split(' - ')[1] || 'Standard'}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const ttsUrl = `/api/tts?text=${encodeURIComponent("ሰላም፣ ይህ የድምፅ ናሙና ነው። የዮቶር አርቴፊሻል ኢንተለጀንስ ነው።")}&lang=${langOpts.code}`;
+                          new Audio(ttsUrl).play();
+                        }}
+                        title="Play Preview"
+                        className="p-2 rounded-full bg-zinc-900 border border-zinc-800 text-indigo-400 hover:bg-indigo-600 hover:text-white transition-colors"
+                      >
+                        <Volume2 size={12} />
+                      </button>
+                    </div>
+                ))}
+              </div>
             </div>
           )}
 
           {showConfigTabs === 'motion' && (
             <div className="w-full space-y-3">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-2 text-[10px] sm:text-xs">
                 <button
+                  type="button"
                   onClick={() => onUpdateConfig({ transitionType: 'none' })}
-                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'none' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'none' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900/60 text-zinc-500'}`}
                 >
                   Hard Cut
                 </button>
                 <button
+                  type="button"
                   onClick={() => onUpdateConfig({ transitionType: 'crossfade' })}
-                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'crossfade' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'crossfade' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900/60 text-zinc-500'}`}
                 >
-                  Smooth Crossfade
+                  Crossfade
                 </button>
                 <button
-                  onClick={() => onUpdateConfig({ transitionType: 'zoomBlur' })}
-                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'zoomBlur' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900 text-zinc-500'}`}
+                  type="button"
+                  onClick={() => onUpdateConfig({ transitionType: 'slide' })}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'slide' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900/60 text-zinc-500'}`}
                 >
-                  Zoom Blur
+                  Slide
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateConfig({ transitionType: 'wipe' })}
+                  className={`py-1.5 border rounded-lg ${projectConfig.transitionType === 'wipe' ? 'bg-zinc-900 border-indigo-500 text-indigo-400 font-bold' : 'border-zinc-900/60 text-zinc-500'}`}
+                >
+                  Wipe
                 </button>
               </div>
               <div className="flex items-center gap-4">

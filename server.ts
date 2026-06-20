@@ -121,7 +121,7 @@ Break the script into as many sequential scenes as logically necessary to reflec
     const prompt = `You are "Yoto AI Director", an expert cinematic video producer specializing in high-end, breathtaking visual storytelling. Your goal is to transform the user's script (enclosed in triple quotes) into a masterfully paced, sequential scene sequence.
  
 Each scene MUST match a section of the script.
-CRITICAL CONSTRAINT: You must use the exact, unaltered portions of the user's script for the 'text' fields. Do not summarize or omit anything. The total sequence must represent 100% of the input text.
+CRITICAL CONSTRAINT: You must use the exact, unaltered portions of the user's script for the 'text' fields. Do NOT summarize or omit anything. The total sequence must represent 100% of the input text.
 
 ${lengthInstruction}
 
@@ -245,10 +245,71 @@ ${script}
   }
 });
 
-// 2. TTS Proxy API - plays a google tts mp3 stream for the text
+// OPTIONS handling for CORS preflights
+app.options("/api/tts", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type");
+  res.sendStatus(200);
+});
+
+// Diagnostics API - Checks Gemini capacity, Pexels configuration, and overall app health
+app.get("/api/diagnose", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  
+  const diagnostics: any = {
+    geminiApiKeyConfigured: !!process.env.GEMINI_API_KEY,
+    geminiTtsStatus: "not_tested", // 'ok', 'quota_limit', 'error', 'no_key'
+    geminiTtsMessage: "",
+    pexelsApiKeyConfigured: !!(req.headers["x-pexels-key"] || process.env.PEXELS_API_KEY)
+  };
+
+  if (!diagnostics.geminiApiKeyConfigured) {
+    diagnostics.geminiTtsStatus = "no_key";
+    diagnostics.geminiTtsMessage = "የGemini API Key አልተገኘም። እባክዎ በSettings (ማስተካከያ) ውስጥ ያስገቡ ወይም በ .env ፋይል ውስጥ ያዋቅሩት።";
+  } else if (ai) {
+    try {
+      // Test Gemini model with a very light check
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-tts-preview",
+        contents: "ሀ",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } }
+          }
+        }
+      });
+      const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (data) {
+        diagnostics.geminiTtsStatus = "ok";
+        diagnostics.geminiTtsMessage = "ሁሉም ነገር በትክክል እየሰራ ነው። ከፍተኛ ጥራት ባለው የተረካ ድምፅ መጠቀም ይችላሉ።";
+      } else {
+        diagnostics.geminiTtsStatus = "error";
+        diagnostics.geminiTtsMessage = "ሞዴሉ ባዶ ምላሽ ሰጥቷል። ወደ ተካይ የጉግል ትራንስሌት ድምፅ ይቀየራል።";
+      }
+    } catch (err: any) {
+      if (err.message && (err.message.includes("quota") || err.message.includes("429") || err.message.includes("RESOURCE_EXHAUSTED"))) {
+        diagnostics.geminiTtsStatus = "quota_limit";
+        diagnostics.geminiTtsMessage = "የGemini Quality Voice የቀን የክፍያ ገደብ (10 Requests) ተሟጧል፤ ወደ መደበኛ የጉግል ትራንስሌት ድምፅ በራስ-ሰር ይቀየራል። (ስራ አይቋረጥም)";
+      } else {
+        diagnostics.geminiTtsStatus = "error";
+        diagnostics.geminiTtsMessage = `ስህተት: ${err.message || err}`;
+      }
+    }
+  }
+
+  res.json(diagnostics);
+});
+
+// 2. TTS Proxy API - plays a google tts mp3 stream for the text, or uses Gemini high-quality TTS for Yotor voice presets
 app.get("/api/tts", async (req, res) => {
   const text = req.query.text as string;
   const lang = (req.query.lang as string) || "en";
+
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Range, Content-Type");
 
   if (!text) {
     return res.status(400).json({ error: "Text is required to vocalize." });
@@ -256,100 +317,168 @@ app.get("/api/tts", async (req, res) => {
 
   try {
     const safeText = text.substring(0, 5000);
-    
-    let fallbackToGoogle = false;
-    let fallbackLang = lang;
+    const isYotor = lang.startsWith('am-yotor') || lang === 'am-male';
 
-    if (lang.startsWith('am-yotor') && ai) {
-      let voiceName = "Charon"; // default
-      if (lang === 'am-yotor-epic-male') voiceName = "Charon";
-      else if (lang === 'am-yotor-warm-female') voiceName = "Aoede";
-      else if (lang === 'am-yotor-bright-female') voiceName = "Kore";
-      else if (lang === 'am-yotor-rugged-male') voiceName = "Fenrir";
+    if (isYotor && ai) {
+      // Determine the right prebuilt voice based on option
+      let voiceName = "Charon"; // Default male voice
+      if (lang === "am-yotor-epic-male" || lang === "am-male") {
+        voiceName = "Charon";
+      } else if (lang === "am-yotor-warm-female") {
+        voiceName = "Aoede";
+      } else if (lang === "am-yotor-bright-female") {
+        voiceName = "Kore";
+      } else if (lang === "am-yotor-rugged-male") {
+        voiceName = "Fenrir";
+      }
 
       try {
         const response = await ai.models.generateContent({
           model: "gemini-3.1-flash-tts-preview",
-          contents: [{ parts: [{ text: safeText }] }],
+          contents: safeText,
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: voiceName },
-              },
-            },
-          },
+              voiceConfig: { prebuiltVoiceConfig: { voiceName } }
+            }
+          }
         });
 
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (base64Audio) {
-          const pcmBuffer = Buffer.from(base64Audio, 'base64');
-          const wavBuffer = pcmToWav(pcmBuffer, 24000);
-          
-          res.setHeader("Content-Type", "audio/wav");
-          res.setHeader("Cache-Control", "public, max-age=86400");
-          return res.send(wavBuffer);
-        } else {
-           fallbackToGoogle = true;
-           fallbackLang = 'am';
+        const audioBase64 = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (audioBase64) {
+          const rawBuffer = Buffer.from(audioBase64, "base64");
+          const wavBuffer = pcmToWav(rawBuffer, 24000);
+
+          const range = req.headers.range;
+          if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : wavBuffer.length - 1;
+
+            if (start >= wavBuffer.length || end >= wavBuffer.length) {
+              res.status(416).setHeader("Content-Range", `bytes */${wavBuffer.length}`);
+              return res.end();
+            }
+
+            const chunksize = (end - start) + 1;
+            const fileChunk = wavBuffer.subarray(start, end + 1);
+
+            res.writeHead(206, {
+              "Content-Range": `bytes ${start}-${end}/${wavBuffer.length}`,
+              "Accept-Ranges": "bytes",
+              "Content-Length": chunksize,
+              "Content-Type": "audio/wav",
+              "Cache-Control": "public, max-age=86400",
+              "Access-Control-Allow-Origin": "*"
+            });
+            return res.end(fileChunk);
+          } else {
+            res.writeHead(200, {
+              "Content-Length": wavBuffer.length,
+              "Accept-Ranges": "bytes",
+              "Content-Type": "audio/wav",
+              "Cache-Control": "public, max-age=86400",
+              "Access-Control-Allow-Origin": "*"
+            });
+            return res.end(wavBuffer);
+          }
         }
-      } catch (geminiError: any) {
-        console.warn("Gemini TTS failed (likely quota exceeded), falling back:", geminiError.message);
-        fallbackToGoogle = true;
-        fallbackLang = 'am';
+      } catch (gem_err) {
+        console.error("Gemini TTS high-quality generation failed, falling back to Translate TTS:", gem_err);
       }
-    } else if (lang.startsWith('am-yotor')) {
-      // If am-yotor is requested but no API key is available
+    }
+
+    // Google Translate TTS fallback
+    let fallbackLang = lang;
+    if (lang.startsWith('am-yotor') || lang === 'am-male') {
       fallbackLang = 'am';
-      fallbackToGoogle = true;
-    } else {
-      fallbackToGoogle = true;
     }
 
-    if (fallbackToGoogle) {
-      // For Google TTS, we must split long text into chunks of ~200 chars to avoid "413 Request Entity Too Large"
-      const chunks: string[] = [];
-      let remainingText = text;
-      
-      while (remainingText.length > 0) {
-        if (remainingText.length <= 190) {
-          chunks.push(remainingText);
-          break;
-        }
-        
-        let chunk = remainingText.substring(0, 190);
-        // Try to break at a space or sentence end
-        const lastSpace = chunk.lastIndexOf(' ');
-        const lastPeriod = Math.max(chunk.lastIndexOf('.'), chunk.lastIndexOf('።'));
-        
-        const splitIndex = lastPeriod > 100 ? lastPeriod + 1 : (lastSpace > 100 ? lastSpace : 190);
-        chunks.push(remainingText.substring(0, splitIndex));
-        remainingText = remainingText.substring(splitIndex).trim();
-      }
-
-      const audioBuffers: Buffer[] = [];
-      for (const segment of chunks) {
-        const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${fallbackLang}&q=${encodeURIComponent(segment)}`;
-        const ttsRes = await fetch(url);
-        if (ttsRes.ok) {
-          const buf = await ttsRes.arrayBuffer();
-          audioBuffers.push(Buffer.from(buf));
-        }
-      }
-
-      if (audioBuffers.length > 0) {
-        res.setHeader("Content-Type", "audio/mpeg");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-        return res.send(Buffer.concat(audioBuffers));
-      } else {
-        throw new Error("Failed to produce any audio chunks via Google TTS.");
-      }
-    }
+    // For Google TTS, we must split long text into chunks of ~200 chars to avoid "413 Request Entity Too Large"
+    const chunks: string[] = [];
+    let remainingText = safeText;
     
-    throw new Error("Internal TTS routing error.");
+    while (remainingText.length > 0) {
+      if (remainingText.length <= 190) {
+        chunks.push(remainingText);
+        break;
+      }
+      
+      let chunk = remainingText.substring(0, 190);
+      // Try to break at a space or sentence end
+      const lastSpace = chunk.lastIndexOf(' ');
+      const lastPeriod = Math.max(chunk.lastIndexOf('.'), chunk.lastIndexOf('።'));
+      
+      const splitIndex = lastPeriod > 100 ? lastPeriod + 1 : (lastSpace > 100 ? lastSpace : 190);
+      chunks.push(remainingText.substring(0, splitIndex));
+      remainingText = remainingText.substring(splitIndex).trim();
+    }
+
+    const audioBuffers: Buffer[] = [];
+    for (const segment of chunks) {
+      const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${fallbackLang}&q=${encodeURIComponent(segment)}`;
+      const ttsRes = await fetch(url);
+      if (ttsRes.ok) {
+        const buf = await ttsRes.arrayBuffer();
+        audioBuffers.push(Buffer.from(buf));
+      }
+    }
+
+    if (audioBuffers.length > 0) {
+      const combinedBuffer = Buffer.concat(audioBuffers);
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : combinedBuffer.length - 1;
+
+        if (start >= combinedBuffer.length || end >= combinedBuffer.length) {
+          res.status(416).setHeader("Content-Range", `bytes */${combinedBuffer.length}`);
+          return res.end();
+        }
+
+        const chunksize = (end - start) + 1;
+        const fileChunk = combinedBuffer.subarray(start, end + 1);
+
+        res.writeHead(206, {
+          "Content-Range": `bytes ${start}-${end}/${combinedBuffer.length}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunksize,
+          "Content-Type": "audio/mpeg",
+          "Cache-Control": "public, max-age=86400",
+          "Access-Control-Allow-Origin": "*"
+        });
+        return res.end(fileChunk);
+      } else {
+        res.writeHead(200, {
+          "Content-Length": combinedBuffer.length,
+          "Accept-Ranges": "bytes",
+          "Content-Type": "audio/mpeg",
+          "Cache-Control": "public, max-age=86400",
+          "Access-Control-Allow-Origin": "*"
+        });
+        return res.end(combinedBuffer);
+      }
+    } else {
+      throw new Error("Failed to produce any audio chunks via Google TTS.");
+    }
   } catch (err: any) {
-    console.error("Audio generation proxy failure:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Audio generation proxy failure, serving emergency silence:", err);
+    try {
+      // Return 1-second of playable silence as a graceful fallback to prevent player crash
+      const silentPcm = Buffer.alloc(48000); // 1s of 16-bit PCM (2 bytes per sample at 24000Hz)
+      const silentWav = pcmToWav(silentPcm, 24000);
+      res.writeHead(200, {
+        "Content-Length": silentWav.length,
+        "Accept-Ranges": "bytes",
+        "Content-Type": "audio/wav",
+        "Cache-Control": "no-cache",
+        "Access-Control-Allow-Origin": "*"
+      });
+      return res.end(silentWav);
+    } catch (silentErr) {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
@@ -408,11 +537,11 @@ app.post("/api/thumbnail", async (req, res) => {
     
     // 1. Generate visual image prompt using text model
     const promptResponse = await ai.models.generateContent({
-      model: "gemini-3.1-flash-preview",
-      contents: `You are an expert YouTube Thumbnail designer. Generate a highly detailed image generation prompt for an amazing, eye-catching, highly clickable video thumbnail based on this video script snippet. The thumbnail should be cinematic, vibrant, and highly dramatic. IMPORTANT: Do NOT include text or typography instructions in the image prompt, just describe the raw visual composition and lighting.
+      model: "gemini-3.5-flash",
+      contents: [{ role: "user", parts: [{ text: `You are an expert YouTube Thumbnail designer. Generate a highly detailed image generation prompt for an amazing, eye-catching, highly clickable video thumbnail based on this video script snippet. The thumbnail should be cinematic, vibrant, and highly dramatic. IMPORTANT: Do NOT include text or typography instructions in the image prompt, just describe the raw visual composition and lighting.
 
 Video Script:
-${scenesText.substring(0, 5000)}`
+${scenesText.substring(0, 5000)}` }] }]
     });
 
     let imagePrompt = promptResponse.text?.trim() || "cinematic colorful abstract background 4k";
@@ -511,7 +640,7 @@ Return ONLY JSON matching the schema.`;
     };
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-preview",
+      model: "gemini-3.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
