@@ -11,7 +11,7 @@ export default function AccessGate({ children }: AccessGateProps) {
   const BACKUP_OWNER = 'josij9989@gmail.com';
   
   // Default VIP Codes
-  const DEFAULT_VIP_KEYS = ['YOTOR-FREE-AMHARIC-2026', 'YOTOR-VIP-PASS', 'ETHIOPIA-YOTOR'];
+  const DEFAULT_VIP_KEYS = ['YOTOR-PREMIUM-ACCESS-CODE', 'YOTOR-OFFICIAL-2026'];
 
   // Whitelist State
   const [whitelist, setWhitelist] = useState<string[]>(() => {
@@ -529,10 +529,10 @@ export default function AccessGate({ children }: AccessGateProps) {
                 <div className="space-y-2">
                   <h3 className="text-sm font-bold text-zinc-200 uppercase tracking-widest font-mono">⏳ ጥያቄዎ በመጠባበቅ ላይ ነው / Approval Pending</h3>
                   <p className="text-[11px] text-[#8e909a] leading-relaxed max-w-sm mx-auto">
-                    ለስልክ ቁጥርዎ <strong className="text-zinc-200 font-mono text-xs">{currentEmail}</strong> የመዳረሻ ፈቃድ ጥያቄ ለባለቤቱ ተልኳል። 
+                    የስልክ ቁጥርዎ <strong className="text-zinc-200 font-mono text-xs">{currentEmail}</strong> ለደህንነት ሲባል ተመዝግቧል። 
                   </p>
-                  <p className="text-[10px] text-cyan-400 leading-normal px-2">
-                    እባክዎ ባለቤቱ ክፍያዎን በቴሌብር (<strong>0979036932</strong>) ሲያረጋግጥ በደቂቃዎች ውስጥ ያጸድቁታል።
+                  <p className="text-[10px] text-indigo-400 leading-normal px-2">
+                    መዳረሻዎ እንዲጸድቅ የቴሌብር ክፍያ ማረጋገጫ ለባለቤቱ (<strong>0979036932</strong>) መላክ ይኖርብዎታል ወይም ባለቤቱ በሲስተሙ እንዲፈቅድልዎ ይጠብቁ።
                   </p>
                 </div>
 
@@ -629,9 +629,9 @@ export default function AccessGate({ children }: AccessGateProps) {
                 </button>
 
                 <div className="p-3 bg-[#050505] border border-zinc-900/60 rounded-xl flex items-start gap-2.5 text-[10px] text-zinc-500">
-                  <span className="text-amber-500 font-bold">ℹ️ ማስታወሻ:</span>
+                  <span className="text-indigo-500 font-bold">ℹ️ ማስታወሻ:</span>
                   <span>
-                    ባለቤቶች በኢሜይል ወይም በልዩ የነፃ መግቢያ ቁድ መግባት ይችላሉ። ሌሎች ደንበኞች በቅድሚያ ክፍያ መፈጸም ይኖርባቸዋል። / Owners can also enter admin email or VIP pass code.
+                    ይህ ፕሮፌሽናል የቪዲዮ ስራ መስሪያ ስቱዲዮ ነው። መዳረሻ እንዲሰጥዎ በቅድሚያ ክፍያ መፈጸም ወይም በባለቤቱ የተፈቀደ የቪአይፒ ኮድ ሊኖርዎ ይገባል። / This is a professional cinematic studio. Access requires a paid subscription or owner-approved VIP pass.
                   </span>
                 </div>
               </form>
@@ -641,9 +641,9 @@ export default function AccessGate({ children }: AccessGateProps) {
             {lockTab === 'pay' && !successMessage && (
               <form onSubmit={handleSimulatedPayment} className="space-y-4">
                 <div className="text-center space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[#00b4d8] text-[10px] uppercase font-mono tracking-widest block mx-auto">
-                    <span className="w-1.5 h-1.5 bg-[#00b4d8] rounded-full animate-ping"></span>
-                    Telebirr Premium (ቴሌብር ክፍያ)
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] uppercase font-mono tracking-widest block mx-auto">
+                    <ShieldCheck size={12} className="animate-pulse" />
+                    Official Payment & Validation Interface
                   </div>
                   <h3 className="text-xs font-bold text-zinc-200 uppercase tracking-widest font-mono pt-1">
                     Select Your Premium Package
@@ -691,7 +691,7 @@ export default function AccessGate({ children }: AccessGateProps) {
                           {targetQuality === '720p' && <div className="w-1.5 h-1.5 bg-zinc-950 rounded-full" />}
                         </div>
                       </div>
-                      <p className="text-[9px] text-[#8e909a] mt-1 pr-1">መደበኛ ጥራት (HD) / Standard High-Definition video</p>
+                      <p className="text-[9px] text-[#8e909a] mt-1 pr-1">መደበኛ ጥራት (HD) / Standard cinematic production</p>
                     </div>
                     <div className="text-xs font-mono font-black text-teal-400">
                       10,000 ETB <span className="text-[9px] font-normal text-zinc-500">/በወር</span>
@@ -813,7 +813,7 @@ export default function AccessGate({ children }: AccessGateProps) {
                   {paymentLoading ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ቴሌብርን በማገናኘት ላይ / Processing Customer...
+                      ሂሳቡን በማረጋገጥ ላይ / Authenticating Payment...
                     </>
                   ) : (
                     <>

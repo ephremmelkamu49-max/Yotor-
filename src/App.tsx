@@ -36,6 +36,7 @@ export default function App() {
     musicVolume: 0.12,
     voiceLanguage: 'am-yotor-epic-male',
     subtitleStyle: {
+      enabled: true,
       fontSize: 32,
       color: '#FFFFFF',
       backgroundColor: 'rgba(0, 0, 0, 0.45)',
@@ -398,9 +399,9 @@ export default function App() {
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.6)] animate-pulse"></span>
-                  <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-zinc-400">YOTOR / AI</span>
+                  <span className="text-[10px] uppercase tracking-[0.2em] font-black text-indigo-400">YOTOR AI</span>
                 </div>
-                <h1 className="text-2xl font-light text-white font-sans tracking-tight">Script Processor & Compositor</h1>
+                <h1 className="text-3xl font-black text-white font-sans tracking-tighter uppercase">AI Director Studio</h1>
               </div>
             </div>
           </div>
@@ -417,11 +418,15 @@ export default function App() {
             <button
               onClick={() => setIsRenderOpen(true)}
               disabled={scenes.length === 0}
-              className="flex items-center justify-center gap-2 px-6 py-3.5 bg-zinc-100 hover:bg-white text-black font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-lg disabled:opacity-30 disabled:pointer-events-none active:scale-98 animate-[pulse_3s_infinite]"
+              className="group relative flex items-center justify-center gap-3 px-8 py-4 bg-white hover:bg-zinc-100 text-black font-black text-sm uppercase tracking-[0.2em] rounded-2xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.25)] hover:shadow-[0_0_35px_rgba(255,255,255,0.4)] disabled:opacity-30 disabled:pointer-events-none active:scale-95 animate-shimmer"
               id="bake-video-btn"
             >
-              <Download size={14} className="stroke-[2.5px]" />
-              🎬 ቪዲዮውን አዘጋጅና አውርድ (Bake & Export Video)
+              <div className="absolute -top-1 -right-1 flex h-4 w-4">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-4 w-4 bg-indigo-500"></span>
+              </div>
+              <Download size={18} className="stroke-[3px] group-hover:translate-y-0.5 transition-transform" />
+              🎬 ቪዲዮውን አዘጋጅና አውርድ (READY TO EXPORT)
             </button>
           </div>
         </header>

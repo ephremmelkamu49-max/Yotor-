@@ -115,25 +115,24 @@ app.post("/api/analyze-script", async (req, res) => {
 
   try {
     // Build an intelligent length-aware prompt to bundle sentences in long scripts!
-    const lengthInstruction = isLongScript 
-      ? `CRITICAL COMPRESSION CONSTRAINT FOR LONG SCRIPT (${wordCount} words):
-This is a long script of ${wordCount} words (representing a long narrative). To ensure the rendering process is completely stable, has high performance, and is under memory bounds, you MUST bundle multiple sentences together into fewer, longer scenes of between 15 and 35 seconds of speaking duration each (about 35 to 80 words per scene). DO NOT create a separate scene for every single sentence. Maintain a highly cohesive timeline of no more than 40-50 scenes total, even for a very long script.`
-      : `SHORT SCRIPT CONSTRAINT (${wordCount} words):
-This is a brief script. You can break it down more granularly, with each scene representing 1 or 2 sentences (between 4 and 10 seconds of speaking duration).`;
+    const lengthInstruction = `SCENIC DENSITY INSTRUCTION:
+Break the script into as many sequential scenes as logically necessary to reflect the content. There are NO limits on the total number of scenes. You can create granular scenes (e.g., 5-10 seconds each) or longer thematic scenes (e.g., 20-30 seconds each) based on what fits the narrative flow best. Ensure every single word of the original script is represented in the 'text' fields of the scenes.`;
 
-    const prompt = `You are a master cinematic video producer. Break down the user's provided text script (enclosed in triple quotes) into logical, sequential scenes.
+    const prompt = `You are "Yoto AI Director", an expert cinematic video producer specializing in high-end, breathtaking visual storytelling. Your goal is to transform the user's script (enclosed in triple quotes) into a masterfully paced, sequential scene sequence.
  
-Each scene MUST match a sentence or group of sentences from the script.
-CRITICAL CONSTRAINT: You must use the exact, unaltered portions of the user's script for the 'text' fields. Do not write any script Yourself, do not summarize, do not rephrase, do not add advice, do not omit any sentences, and do not remove words. The combined 'text' fields of all scenes must concatenate exactly to the original script.
+Each scene MUST match a section of the script.
+CRITICAL CONSTRAINT: You must use the exact, unaltered portions of the user's script for the 'text' fields. Do not summarize or omit anything. The total sequence must represent 100% of the input text.
 
 ${lengthInstruction}
 
-For each scene, output:
-1. 'text': The exact sentences from the script for this segment.
-2. 'keywords': Cinematic, high-quality search keywords for querying video stock libraries (such as Pexels) to represent this scene visually (e.g., 'ambient drone slow motion city skyline sunset', 'man coding in neon dark room cozy keyboard close up'). 
-   CRITICAL MULTILANGUAGE RULE: All 'keywords' MUST be in ENGLISH (e.g., if the user script is in Amharic [አማርኛ] or another language, translate the visual intent into powerful, highly descriptive English search terms so that the Pexels search engine finds gorgeous, relevant, high-definition videos). Enhance keywords with aesthetic cinematic tags like "slow motion", "epic cinematic", "drone flyover", "cinematic lighting", "breathtaking scenery", "4k detail", "hyperrealistic".
-3. 'caption': A concise, highly readable text caption version of the text to overlay as sleek subtitles. Keep it in the native language of the user script (e.g., keep Amharic text intact for subtitles).
-4. 'duration': Speaking duration in seconds. Make sure to estimate this accurately based on the word count (around 2.4 words per second, i.e. 140 words per minute, with a minimum duration of 4.0 seconds per scene).
+For each scene, provide:
+1. 'text': The exact original script snippet for this scene.
+2. 'keywords': Cinematic, high-quality search keywords for querying professional video libraries. 
+   - RULE: MUST be in ENGLISH.
+   - QUALITY: Describe RAW visual beauty. Use styles like: "aerial drone view", "macro focus", "cinematic lighting", "high contrast", "vibrant colors", "8k resolution", "extremely detailed".
+   - VARIETY: Alternate between wide landscapes, close-up details, and dynamic action shots to maintain visual rhythm.
+3. 'caption': Subtitles for the scene. Keep the original language (e.g. Amharic).
+4. 'duration': Speaking time (approx 2.2 words/sec). Min 4s.
 
 User Script:
 """
@@ -256,7 +255,7 @@ app.get("/api/tts", async (req, res) => {
   }
 
   try {
-    const safeText = text.substring(0, 195);
+    const safeText = text.substring(0, 5000);
     
     let fallbackToGoogle = false;
     let fallbackLang = lang;
@@ -302,22 +301,52 @@ app.get("/api/tts", async (req, res) => {
     } else if (lang.startsWith('am-yotor')) {
       // If am-yotor is requested but no API key is available
       fallbackLang = 'am';
+      fallbackToGoogle = true;
+    } else {
+      fallbackToGoogle = true;
     }
 
-    // Google Translate TTS fallback
-    const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${fallbackLang}&q=${encodeURIComponent(safeText)}`;
+    if (fallbackToGoogle) {
+      // For Google TTS, we must split long text into chunks of ~200 chars to avoid "413 Request Entity Too Large"
+      const chunks: string[] = [];
+      let remainingText = text;
+      
+      while (remainingText.length > 0) {
+        if (remainingText.length <= 190) {
+          chunks.push(remainingText);
+          break;
+        }
+        
+        let chunk = remainingText.substring(0, 190);
+        // Try to break at a space or sentence end
+        const lastSpace = chunk.lastIndexOf(' ');
+        const lastPeriod = Math.max(chunk.lastIndexOf('.'), chunk.lastIndexOf('።'));
+        
+        const splitIndex = lastPeriod > 100 ? lastPeriod + 1 : (lastSpace > 100 ? lastSpace : 190);
+        chunks.push(remainingText.substring(0, splitIndex));
+        remainingText = remainingText.substring(splitIndex).trim();
+      }
 
-    const ttsRes = await fetch(url);
+      const audioBuffers: Buffer[] = [];
+      for (const segment of chunks) {
+        const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=${fallbackLang}&q=${encodeURIComponent(segment)}`;
+        const ttsRes = await fetch(url);
+        if (ttsRes.ok) {
+          const buf = await ttsRes.arrayBuffer();
+          audioBuffers.push(Buffer.from(buf));
+        }
+      }
 
-    if (!ttsRes.ok) {
-      throw new Error(`Google TTS proxy offline or rejected request style. Status: ${ttsRes.status}`);
+      if (audioBuffers.length > 0) {
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return res.send(Buffer.concat(audioBuffers));
+      } else {
+        throw new Error("Failed to produce any audio chunks via Google TTS.");
+      }
     }
-
-    const ttsBuffer = await ttsRes.arrayBuffer();
     
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "public, max-age=86400"); // cache aggressively to save Pexels/TTS loads
-    res.send(Buffer.from(ttsBuffer));
+    throw new Error("Internal TTS routing error.");
   } catch (err: any) {
     console.error("Audio generation proxy failure:", err);
     res.status(500).json({ error: err.message });
@@ -383,7 +412,7 @@ app.post("/api/thumbnail", async (req, res) => {
       contents: `You are an expert YouTube Thumbnail designer. Generate a highly detailed image generation prompt for an amazing, eye-catching, highly clickable video thumbnail based on this video script snippet. The thumbnail should be cinematic, vibrant, and highly dramatic. IMPORTANT: Do NOT include text or typography instructions in the image prompt, just describe the raw visual composition and lighting.
 
 Video Script:
-${scenesText.substring(0, 1000)}`
+${scenesText.substring(0, 5000)}`
     });
 
     let imagePrompt = promptResponse.text?.trim() || "cinematic colorful abstract background 4k";

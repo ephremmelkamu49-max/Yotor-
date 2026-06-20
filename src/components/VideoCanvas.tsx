@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Scene, AspectRatio, ProjectConfig } from '../types';
 import { DEFAULT_MUSIC, GOOGLE_TTS_LANGUAGES } from '../data';
 import { 
-  Play, Pause, SkipForward, SkipBack, Volume2, Maximize, RefreshCw, Layers, Check, Sparkles
+  Play, Pause, SkipForward, SkipBack, Volume2, Maximize, RefreshCw, Layers, Check, Sparkles, Eye, EyeOff
 } from 'lucide-react';
 
 interface VideoCanvasProps {
@@ -37,7 +37,6 @@ export default function VideoCanvas({
   const rafRef = useRef<number | null>(null);
   const progressTimerRef = useRef<any>(null);
 
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(''); // Keep this unused state to prevent breaking previously unseen logic if any or just remove it. Actually I will remove it and add refs.
   const [currentSceneTime, setCurrentSceneTime] = useState<number>(0);
   const currentSceneTimeRef = useRef<number>(0);
   const playbackIndexRef = useRef<number>(0);
@@ -166,12 +165,6 @@ export default function VideoCanvas({
     
     // Play with fallback/guard
     audio.play()
-      .then(() => {
-        // Automatically sync scene duration with voiceover length if it exceeds the rough word estimation!
-        if (audio.duration && audio.duration > currentScene.duration) {
-          onUpdateConfig({}); // Force updates
-        }
-      })
       .catch((err) => {
         console.warn("TTS Audio play waiting for user action limit API:", err);
       });
@@ -334,7 +327,7 @@ export default function VideoCanvas({
       ctx.fillRect(0, 0, width, height);
 
       // 3. Draw Captions/Subtitles
-      if (currentScene) {
+      if (currentScene && projectConfig.subtitleStyle.enabled) {
         const text = projectConfig.subtitleStyle.uppercase 
           ? currentScene.caption.toUpperCase()
           : currentScene.caption;
@@ -571,6 +564,24 @@ export default function VideoCanvas({
 
           {showConfigTabs === 'subtitle' && (
             <div className="w-full space-y-3">
+              <div className="flex items-center justify-between mb-1 pb-1 border-b border-zinc-900">
+                <span className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest">Visibility Toggle</span>
+                <button
+                  onClick={() => onUpdateConfig({ subtitleStyle: { ...projectConfig.subtitleStyle, enabled: !projectConfig.subtitleStyle.enabled } })}
+                  className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                    projectConfig.subtitleStyle.enabled 
+                      ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400' 
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                  }`}
+                >
+                  {projectConfig.subtitleStyle.enabled ? (
+                    <><Eye size={10} /> CAPTIONS ON</>
+                  ) : (
+                    <><EyeOff size={10} /> CAPTIONS OFF</>
+                  )}
+                </button>
+              </div>
+              
               <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => onUpdateConfig({ subtitleStyle: { ...projectConfig.subtitleStyle, position: 'bottom' } })}

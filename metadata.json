@@ -1,6 +1,6 @@
 {
-  "name": "Yotor",
-  "description": "Premium High-Definition Text-to-Video Cinematic Studio. Segment scripts into dynamic cinematic sequences with localized voiceovers, smart script timing, visual matches, and live renders.",
+  "name": "Yotor AI Director Studio",
+  "description": "Professional AI-powered cinematic production suite. Transform scripts into high-end vertical or horizontal videos with AI scene sequencing, deep voice synthesis, and cinematic stock footage matching.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

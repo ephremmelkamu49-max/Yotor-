@@ -15,6 +15,7 @@ export interface Scene {
 export type AspectRatio = '16:9' | '9:16' | '1:1';
 
 export interface SubtitleStyle {
+  enabled: boolean;
   fontSize: number;       // in pixels relative to viewport
   color: string;          // hex/rgba
   backgroundColor: string;// background box color (e.g. rgba(0,0,0,0.5))

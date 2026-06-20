@@ -37,36 +37,7 @@ export default function RenderModal({
   });
 
   const getSubscribedPlan = (): '720p' | '1080p' => {
-    const email = localStorage.getItem('yotor_session_email') || '';
-    if (!email) return '720p';
-    
-    const normalized = email.toLowerCase().trim();
-    const MASTER_OWNER = 'ephremmelkamu49@gmail.com';
-    const BACKUP_OWNER = 'josij9989@gmail.com';
-    if (normalized === MASTER_OWNER || normalized === BACKUP_OWNER) {
-      return '1080p';
-    }
-    
-    const whitelistSaved = localStorage.getItem('yotor_whitelist');
-    if (whitelistSaved) {
-      try {
-        const parsed = JSON.parse(whitelistSaved);
-        if (parsed.map((e: string) => e.toLowerCase().trim()).includes(normalized)) {
-          return '1080p';
-        }
-      } catch (e) {}
-    }
-    
-    const savedPlans = localStorage.getItem('yotor_email_plans');
-    if (savedPlans) {
-      try {
-        const parsed = JSON.parse(savedPlans);
-        if (parsed[normalized]) {
-          return parsed[normalized];
-        }
-      } catch (e) {}
-    }
-    return '720p';
+    return '1080p';
   };
 
   const activePlan = getSubscribedPlan();
@@ -557,11 +528,11 @@ export default function RenderModal({
               <button
                 type="button"
                 onClick={initiateRenderAndStitching}
-                className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-widest rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20 active:scale-98"
+                className="py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm uppercase tracking-[0.2em] rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-indigo-600/40 active:scale-95 border border-indigo-400/30"
                 id="render-start-btn"
               >
-                <Play size={14} fill="currentColor" />
-                Initialize Baking
+                <Download size={18} fill="currentColor" className="animate-bounce" />
+                አሁን ቪዲዮውን ቀይርና አውርድ (START VIDEO EXPORT)
               </button>
             </div>
           </div>
@@ -666,13 +637,13 @@ export default function RenderModal({
               
               <a
                 href={renderedBlobUrl}
-                download={`automated_video_${Date.now()}.webm`}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold block text-center rounded-xl text-xs shadow-lg shadow-indigo-505/20 active:scale-98 transition-transform cursor-pointer font-mono uppercase tracking-widest"
+                download={`yotor_official_video_${Date.now()}.webm`}
+                className="flex-1 py-5 bg-gradient-to-r from-emerald-600 to-teal-650 hover:from-emerald-500 hover:to-teal-600 text-white font-black block text-center rounded-2xl text-sm shadow-xl shadow-emerald-600/30 active:scale-95 transition-all cursor-pointer font-mono uppercase tracking-[0.1em] border border-emerald-400/20"
                 id="download-master-video-file-btn"
               >
-                <span className="flex items-center justify-center gap-1.5">
-                  <Download size={14} />
-                  Download File
+                <span className="flex items-center justify-center gap-2.5">
+                  <Download size={20} className="stroke-[3px]" />
+                  ተጠናቋል! ቪዲዮውን ወደ ስልክዎ ይጫኑ (DOWNLOAD MASTER VIDEO)
                 </span>
               </a>
             </div>
